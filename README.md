@@ -1,5 +1,4 @@
-
-# 🏠 Find AppFolio Rental Listing URLs
+# Find AppFolio Rental Listing URLs
 
 This project helps you **find AppFolio rental listing websites by state**.
 
@@ -11,18 +10,18 @@ It does this by:
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
-- [📦 Requirements](#-requirements)
-- [🚀 How to Use](#-how-to-use)
-- [📋 Example Output](#-example-output)
-- [⚙️ Optional Settings](#️-optional-settings)
-- [📝 Notes](#-notes)
-- [✅ Quick Start (One-Liner)](#-quick-start-one-liner)
+- [Requirements](#requirements)  
+- [How to Use](#how-to-use)  
+- [Example Output](#example-output)  
+- [Optional Settings](#optional-settings)  
+- [Notes](#notes)  
+- [Quick Start (One-Liner)](#quick-start-one-liner)  
 
 ---
 
-## 📦 Requirements
+## Requirements
 
 You’ll need:  
 
@@ -38,7 +37,7 @@ You’ll need:
 
 ---
 
-## 🚀 How to Use
+## How to Use
 
 1. **Download the script**  
    Save the code from `find_appfolio.py` into a folder on your computer.  
@@ -65,7 +64,7 @@ You’ll need:
 
 ---
 
-## 📋 Example Output
+## Example Output
 
 When you run it, you’ll see something like this:
 
@@ -83,7 +82,7 @@ This means the script found **2 websites** in Delaware with **active rental list
 
 ---
 
-## ⚙️ Optional Settings
+## Optional Settings
 
 If you want to tweak how the script works, you can change these options inside the code:
 
@@ -96,7 +95,7 @@ Most people don’t need to change these — just update the **state** and run.
 
 ---
 
-## 📝 Notes
+## Notes
 
 * There’s a **hard cap of 1000 Google results** for safety.
 * Some sites may time out or be blocked — those are skipped automatically.
@@ -105,7 +104,7 @@ Most people don’t need to change these — just update the **state** and run.
 
 ---
 
-## ✅ Quick Start (One-Liner)
+## Quick Start (One-Liner)
 
 If you just want to test it quickly:
 

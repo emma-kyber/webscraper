@@ -1,6 +1,7 @@
-**# 🏠 Find AppFolio Rental Listing URLs  **
 
-This project helps you **find AppFolio rental listing websites by state**.  
+# 🏠 Find AppFolio Rental Listing URLs
+
+This project helps you **find AppFolio rental listing websites by state**.
 
 It does this by:  
 1. Searching Google for AppFolio rental listing pages in a given state.  
@@ -10,7 +11,18 @@ It does this by:
 
 ---
 
-**## 📦 Requirements  **
+## 📑 Table of Contents
+
+- [📦 Requirements](#-requirements)
+- [🚀 How to Use](#-how-to-use)
+- [📋 Example Output](#-example-output)
+- [⚙️ Optional Settings](#️-optional-settings)
+- [📝 Notes](#-notes)
+- [✅ Quick Start (One-Liner)](#-quick-start-one-liner)
+
+---
+
+## 📦 Requirements
 
 You’ll need:  
 
@@ -26,75 +38,77 @@ You’ll need:
 
 ---
 
-**## 🚀 How to Use  **
+## 🚀 How to Use
 
 1. **Download the script**  
    Save the code from `find_appfolio.py` into a folder on your computer.  
 
-2. **Open the script**
-3. In a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
+2. **Open the script** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
    ```python
    state = "Delaware"
-4. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
+```
 
-Open your terminal (or command prompt) and go to the folder where you saved the script.  
-Example (if it’s on your Desktop):
+3. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
 
-```bash
-cd ~/Desktop
+4. **Open your terminal (or command prompt)** and go to the folder where you saved the script.
+   Example (if it’s on your Desktop):
+
+   ```bash
+   cd ~/Desktop
+   ```
+
+5. **Run the script**:
+
+   ```bash
+   python3 find_appfolio.py
+   ```
 
 ---
 
-**## 📋 Example Output**
+## 📋 Example Output
 
 When you run it, you’ll see something like this:
-  ```bash
-  [+] Found good site (1/10): https://example1.appfolio.com/listings
-  [+] Found good site (2/10): https://example2.appfolio.com/listings
 
-  Found 2 qualifying websites for Delaware:
+```text
+[+] Found good site (1/10): https://example1.appfolio.com/listings
+[+] Found good site (2/10): https://example2.appfolio.com/listings
 
-  https://example1.appfolio.com/listings
-  https://example2.appfolio.com/listings
-  ```
+Found 2 qualifying websites for Delaware:
+
+https://example1.appfolio.com/listings
+https://example2.appfolio.com/listings
+```
 
 This means the script found **2 websites** in Delaware with **active rental listings**.
 
 ---
 
-
-**⚙️ Optional Settings**
+## ⚙️ Optional Settings
 
 If you want to tweak how the script works, you can change these options inside the code:
-```python 
 
-  target_count=10 → How many websites you want it to find before stopping.
+* `target_count=10` → How many websites you want it to find before stopping.
+* `min_occurrences=20` → How many times **“apply now”** must appear on the site for it to count as active.
+* `results_per_page=10` → How many Google results to grab at once.
+* `sleep_sec=1.0` → How many seconds to pause between checks (helps avoid being blocked).
 
-  min_occurrences=20 → How many times “apply now” must appear on the site for it to count as active.
-
-  results_per_page=10 → How many Google results to grab at once.
-
-  sleep_sec=1.0 → How many seconds to pause between checks (helps avoid being blocked).
-
-Most people don’t need to change these — just update the state and run.
+Most people don’t need to change these — just update the **state** and run.
 
 ---
 
-**📝 Notes**
+## 📝 Notes
 
-There’s a hard cap of 1000 Google results for safety.
-
-Some sites may time out or be blocked — those are skipped automatically.
-
-The script takes a little time if it’s checking lots of sites.
-
-Works best when you pick full state names like "Arizona" or "Texas".
+* There’s a **hard cap of 1000 Google results** for safety.
+* Some sites may time out or be blocked — those are skipped automatically.
+* The script takes a little time if it’s checking lots of sites.
+* Works best when you pick full state names like `"Arizona"` or `"Texas"`.
 
 ---
 
-✅ Quick Start (One-Liner)
+## ✅ Quick Start (One-Liner)
 
 If you just want to test it quickly:
+
 ```bash
-  pip3 install googlesearch-python requests && python3 find_appfolio.py
+pip3 install googlesearch-python requests && python3 find_appfolio.py
 ```

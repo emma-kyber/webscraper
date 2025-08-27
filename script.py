@@ -11,11 +11,12 @@ import time
 from typing import List, Set
 
 import requests
+from requests.exceptions import RequestException, Timeout, HTTPError, ConnectionError
 from googlesearch import search
 
 
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0"}
-TIMEOUT_SECS = 15
+TIMEOUT_SECS = 15.0
 MAX_RESULTS_CAP = 1000  # Safety cap to avoid unbounded search growth
 
 
@@ -28,7 +29,7 @@ def _site_is_qualifying(
     url: str,
     min_occurrences: int,
     headers: dict[str, str] | None = None,
-    timeout: int = TIMEOUT_SECS,
+    timeout: float = TIMEOUT_SECS,
 ) -> bool:
     """
     Return True if the site contains at least min_occurrences of 'apply now'.
@@ -36,9 +37,11 @@ def _site_is_qualifying(
     """
     try:
         response = requests.get(url, headers=headers or DEFAULT_HEADERS, timeout=timeout)
+        # Optionally enforce 2xx only:
+        # response.raise_for_status()
         text = response.text.lower()
         return text.count("apply now") >= min_occurrences
-    except Exception:  # We intentionally skip broken/slow sites.
+    except (Timeout, HTTPError, ConnectionError, RequestException, UnicodeDecodeError):
         return False
 
 

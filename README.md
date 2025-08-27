@@ -45,7 +45,7 @@ You’ll need:
 2. **Open the script** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
    ```python
    state = "Delaware"
-```
+
 
 3. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
 

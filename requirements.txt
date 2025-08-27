@@ -1,4 +1,4 @@
 requests
 googlesearch-python
 beautifulsoup4
-ddgs
+duckduckgo-search>=6.2.10

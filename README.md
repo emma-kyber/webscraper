@@ -34,7 +34,7 @@ You’ll need:
     ```bash
     pip3 install googlesearch-python requests
     ```
-
+- Plug both of these lines individually and enter them in your terminal
 ---
 
 ## How to Use
@@ -55,7 +55,8 @@ You’ll need:
    ```bash
    cd ~/Desktop
    ```
-
+  If you have placed it into a folder, right-click the folder and press Open Terminal at folder.
+  
 5. **Run the script**:
 
    ```bash

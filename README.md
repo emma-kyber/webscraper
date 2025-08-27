@@ -10,46 +10,28 @@ This project helps you **find active rental listing websites by state** for two 
 
 ## Table of Contents
 
-- [Requirements](#requirements)  
 - [How to Use](#how-to-use)  
 - [Example Output](#example-output)  
 - [Optional Settings](#optional-settings)  
 - [Notes](#notes)  
 - [Quick Start (One-Liner)](#quick-start-one-liner)  
 
----
-
-## Requirements
-
-You’ll need:  
-
-- **Python 3** installed on your computer  
-  - Check your version with:  
-    ```bash
-    python3 --version
-    ```  
-
-- Three Python libraries:  
-    ```bash
-    pip3 install googlesearch-python requests beautifulsoup4
-    ```  
-
-  Install each line individually in your terminal.
 
 ---
 
 ## How to Use
 
 1. **Download the scripts**  
-   Save both `script.py` and `scraper_utils.py` into the same folder on your computer.  
+   Save both `script.py` and `scraper_utils.py` into the same folder on your computer.
+   Or, download the zip through github in the code dropdown.
 
-2. **Open `script.py`** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
+3. **Open `script.py`** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
    ```python
    state = "Delaware"
 
-3. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
+4. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
 
-4. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
+5. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
    Example (if they’re on your Desktop):
 
    ```bash
@@ -58,7 +40,24 @@ You’ll need:
 
    If they’re in a subfolder, right-click the folder and choose **Open Terminal** (or **Open in Terminal**).
 
-5. **Run the script**:
+6. **Requirements:**
+   You’ll need:  
+
+- **Python 3** installed on your computer  
+  - Check your version with:  
+    ```bash
+    python3 -m pip install --upgrade pip
+    python3 -m pip --version
+    ```  
+
+- Three Python libraries:  
+    ```bash
+    pip3 install requests beautifulsoup4 googlesearch-python ddgs
+    ```  
+
+  Install each line individually in your terminal inside your scraper folder.
+
+7. **Run the script**:
 
    ```bash
    python3 script.py

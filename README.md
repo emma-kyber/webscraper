@@ -26,7 +26,8 @@ You’ll need:
 - **Python 3** installed on your computer  
   - Check your version with:  
     ```bash
-    python3 --version
+    python3 -m pip install --upgrade pip
+    python3 -m pip --version
     ```  
 
 - Three Python libraries:  

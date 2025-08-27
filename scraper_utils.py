@@ -19,9 +19,9 @@ from googlesearch import search  # pip install googlesearch-python
 # Optional fallback search backend (DuckDuckGo)
 try:
     # pip install duckduckgo-search
-    from duckduckgo_search import DDGS as DDGSearch  # type: ignore[attr-defined]
-except Exception:  # pragma: no cover - environment without duckduckgo-search
-    DDGSearch = None  # type: ignore[assignment]
+    from duckduckgo_search import DDGS as DDGSEARCH  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - environment without duckduckgo-search
+    DDGSEARCH = None  # type: ignore[assignment]
 
 # ---- Tunables ---------------------------------------------------------------
 
@@ -72,12 +72,12 @@ def _ddg_search(query: str, num_results: int) -> List[str]:
     DuckDuckGo fallback search using duckduckgo-search (DDGS).
     Returns a list of result URLs or [] if backend unavailable.
     """
-    if DDGSearch is None:
+    if DDGSEARCH is None:
         return []
 
     try:
         # DDGS is a context manager; .text yields dicts with "href"
-        with DDGSearch() as ddgs:
+        with DDGSEARCH() as ddgs:
             hits = ddgs.text(query, max_results=num_results)
             return [
                 h.get("href")
@@ -111,11 +111,16 @@ def get_candidates(query: str, num_results: int) -> List[str]:
                 )
                 _sleep_with_jitter(backoff)
                 continue
-            print(f"Google search failed ({err}). Trying DuckDuckGo…",
-                  file=sys.stderr)
-        except Exception as err:  # noqa: BLE001 (library may raise generic)
-            print(f"Google search failed ({err}). Trying DuckDuckGo…",
-                  file=sys.stderr)
+            print(
+                f"Google search failed ({err}). Trying DuckDuckGo…",
+                file=sys.stderr,
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            # googlesearch library can raise generic Exception; fall back.
+            print(
+                f"Google search failed ({err}). Trying DuckDuckGo…",
+                file=sys.stderr,
+            )
 
         # Fallback to DDG
         ddg = _ddg_search(query, num_results)
@@ -185,7 +190,7 @@ def search_and_filter(
     while len(qualifying) < config.target_count and num_results <= MAX_RESULTS_CAP:
         try:
             candidates = get_candidates(query, num_results=num_results)
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:  # pylint: disable=broad-exception-caught
             print(f"Search failed: {err}", file=sys.stderr)
             break
 

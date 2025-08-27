@@ -20,9 +20,18 @@ from googlesearch import search  # pip3 install googlesearch-python
 
 USER_AGENTS = [
     # A few modern desktop UAs
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+      (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) "
+        "Gecko/20100101 Firefox/124.0"
+    ),
 ]
 DEFAULT_HEADERS = {"User-Agent": random.choice(USER_AGENTS)}
 TIMEOUT_SECS = 15.0
@@ -49,34 +58,20 @@ def _google_search(query: str, num_results: int) -> List[str]:
     # googlesearch-python doesn't expose headers; rely on backoff/fallback.
     return list(search(query, num_results=num_results))
 
-
 def _ddg_search(query: str, num_results: int) -> List[str]:
-    """
-    DuckDuckGo fallback search.
-
-    Prefers the renamed package `ddgs` (pip3 install ddgs).
-    Falls back to `duckduckgo_search` if present.
-    Returns a list of result URLs.
-    """
-    # Try the new package first
+    """DuckDuckGo fallback search using `ddgs` if installed."""
     try:
-        from ddgs import DDGS  # pip3 install ddgs
-        with DDGS() as ddgs:
-            hits = ddgs.text(query, max_results=num_results)
-            return [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
-    except Exception:
-        pass
-
-    # Fallback to the old package name if still installed
-    try:
-        from duckduckgo_search import DDGS  # legacy name
-        with DDGS() as ddgs:
-            hits = ddgs.text(query, max_results=num_results)
-            return [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
-    except Exception:
+        from ddgs import DDGS
+    except ImportError:
         return []
 
-
+    try:
+        with DDGS() as ddgs:
+            hits = ddgs.text(query, max_results=num_results)
+            return [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
+    except Exception as e:
+        print(f"DDG search error: {e}", file=sys.stderr)
+        return []
 
 def get_candidates(query: str, num_results: int) -> List[str]:
     """
@@ -85,7 +80,7 @@ def get_candidates(query: str, num_results: int) -> List[str]:
     for i, backoff in enumerate(BACKOFFS + [None]):  # last attempt has no further backoff
         try:
             return _google_search(query, num_results)
-        except Exception as e:  # google blocked us or other error
+        except Exception as e:  # noqa: BLE001  (broad-exception-caught)
             msg = str(e)
             is_429 = ("429" in msg) or ("Too Many Requests" in msg) or ("sorry/index" in msg)
             if is_429 and backoff is not None:

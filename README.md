@@ -52,7 +52,7 @@ This project helps you **find active rental listing websites by state** for two 
 
 - Three Python libraries:  
     ```bash
-    pip3 install requests beautifulsoup4 googlesearch-python duckduckgo-search
+    pip3 install requests beautifulsoup4 googlesearch-python ddgs
     ```  
 
   Install each line individually in your terminal inside your scraper folder.

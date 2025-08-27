@@ -13,7 +13,7 @@ from typing import List, Tuple
 from scraper_utils import SearchConfig, run_search, print_results
 
 # Patterns
-PRICE_REGEX = re.compile(r"\$\s*\d")                         # "$" followed by at least one digit
+PRICE_REGEX = re.compile(r"\$\s*\d")  # "$" followed by at least one digit
 APPLY_NOW_REGEX = re.compile(r"\bapply\s+now\b", re.IGNORECASE)
 
 
@@ -25,9 +25,20 @@ def managebuilding_urls(
     sleep_sec: float = 1.0,
 ) -> List[str]:
     """Look up ManageBuilding rental listing websites in Google for a given state."""
-    query = f'site:managebuilding.com inurl:"Resident/Public/Rentals" "{state}"'
-    config = SearchConfig(target_count=target_count, results_per_page=results_per_page, sleep_sec=sleep_sec)
-    return run_search(query=query, pattern=PRICE_REGEX, min_occurrences=min_occurrences, config=config)
+    query = (
+        f'site:managebuilding.com inurl:"Resident/Public/Rentals" "{state}"'
+    )
+    config = SearchConfig(
+        target_count=target_count,
+        results_per_page=results_per_page,
+        sleep_sec=sleep_sec,
+    )
+    return run_search(
+        query=query,
+        pattern=PRICE_REGEX,
+        min_occurrences=min_occurrences,
+        config=config,
+    )
 
 
 def appfolio_urls(
@@ -39,8 +50,17 @@ def appfolio_urls(
 ) -> List[str]:
     """Look up AppFolio rental listing websites in Google for a given state."""
     query = f'site:appfolio.com/listings "{state}"'
-    config = SearchConfig(target_count=target_count, results_per_page=results_per_page, sleep_sec=sleep_sec)
-    return run_search(query=query, pattern=APPLY_NOW_REGEX, min_occurrences=min_occurrences, config=config)
+    config = SearchConfig(
+        target_count=target_count,
+        results_per_page=results_per_page,
+        sleep_sec=sleep_sec,
+    )
+    return run_search(
+        query=query,
+        pattern=APPLY_NOW_REGEX,
+        min_occurrences=min_occurrences,
+        config=config,
+    )
 
 
 def find_urls_for_state(

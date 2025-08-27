@@ -4,8 +4,8 @@ Shared scraping utilities: Google search + page qualification helpers.
 
 from __future__ import annotations
 
-import re
 import time
+from dataclasses import dataclass
 from typing import List, Set, Pattern, Optional
 
 import requests
@@ -13,10 +13,17 @@ from requests import exceptions
 from bs4 import BeautifulSoup
 from googlesearch import search
 
-
 DEFAULT_HEADERS = {"User-Agent": "Mozilla/5.0"}
 TIMEOUT_SECS = 15.0
 MAX_RESULTS_CAP = 1000  # Safety cap to avoid unbounded search growth
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    """Config for paginated Google crawling + throttling."""
+    target_count: int = 10
+    results_per_page: int = 10
+    sleep_sec: float = 1.0
 
 
 def get_candidates(query: str, num_results: int) -> List[str]:
@@ -61,19 +68,17 @@ def search_and_filter(
     query: str,
     pattern: Pattern[str],
     min_occurrences: int,
-    target_count: int = 10,
-    results_per_page: int = 10,
-    sleep_sec: float = 1.0,
+    config: SearchConfig = SearchConfig(),
 ) -> List[str]:
     """
     Run a Google search with `query`, visit candidates, and keep URLs whose page
-    matches `pattern` at least `min_occurrences` times. Stops at `target_count`.
+    matches `pattern` at least `min_occurrences` times. Stops at `config.target_count`.
     """
     seen: Set[str] = set()
     qualifying: List[str] = []
 
-    num_results = results_per_page
-    while len(qualifying) < target_count and num_results <= MAX_RESULTS_CAP:
+    num_results = config.results_per_page
+    while len(qualifying) < config.target_count and num_results <= MAX_RESULTS_CAP:
         try:
             candidates = get_candidates(query, num_results=num_results)
         except Exception as err:  # pylint: disable=broad-except
@@ -81,7 +86,7 @@ def search_and_filter(
             break
 
         for url in candidates:
-            if len(qualifying) >= target_count:
+            if len(qualifying) >= config.target_count:
                 break
             if url in seen:
                 continue
@@ -90,11 +95,28 @@ def search_and_filter(
             occurrences = count_pattern_on_page(url, pattern)
             if occurrences >= min_occurrences:
                 qualifying.append(url)
-                print(f"[+] Found good site ({len(qualifying)}/{target_count}): {url}")
+                print(f"[+] Found good site ({len(qualifying)}/{config.target_count}): {url}")
 
-            time.sleep(sleep_sec)
+            time.sleep(config.sleep_sec)
 
-        num_results += results_per_page
-        time.sleep(sleep_sec)
+        num_results += config.results_per_page
+        time.sleep(config.sleep_sec)
 
-    return qualifying[:target_count]
+    return qualifying[:config.target_count]
+
+
+def run_search(
+    query: str,
+    pattern: Pattern[str],
+    min_occurrences: int,
+    config: SearchConfig = SearchConfig(),
+) -> List[str]:
+    """Thin wrapper so callers don’t duplicate the search/filter call signature."""
+    return search_and_filter(query=query, pattern=pattern, min_occurrences=min_occurrences, config=config)
+
+
+def print_results(state: str, urls: List[str]) -> None:
+    """Consistent, shared printing (avoids duplicate-code across scripts)."""
+    print(f"\nFound {len(urls)} qualifying websites for {state}:\n")
+    for url in urls:
+        print(url)

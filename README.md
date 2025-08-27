@@ -41,15 +41,16 @@ You’ll need:
 ## How to Use
 
 1. **Download the scripts**  
-   Save both `script.py` and `scraper_utils.py` into the same folder on your computer.  
+   Save both `script.py` and `scraper_utils.py` into the same folder on your computer.
+   Or, download the zip through github in the code dropdown.
 
-2. **Open `script.py`** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
+3. **Open `script.py`** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
    ```python
    state = "Delaware"
 
-3. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
+4. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
 
-4. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
+5. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
    Example (if they’re on your Desktop):
 
    ```bash
@@ -58,7 +59,7 @@ You’ll need:
 
    If they’re in a subfolder, right-click the folder and choose **Open Terminal** (or **Open in Terminal**).
 
-5. **Run the script**:
+6. **Run the script**:
 
    ```bash
    python3 script.py

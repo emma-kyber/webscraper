@@ -1,12 +1,10 @@
-# Find AppFolio Rental Listing URLs
 
-This project helps you **find AppFolio rental listing websites by state**.
+# Find Buildium & AppFolio Rental Listing URLs
 
-It does this by:  
-1. Searching Google for AppFolio rental listing pages in a given state.  
-2. Visiting each site.  
-3. Checking how many times the phrase **“apply now”** appears (more = likely an active rental site).  
-4. Printing a list of the good sites.  
+This project helps you **find active rental listing websites by state** for two major property management systems:
+
+- **Buildium** — qualifies sites by counting visible price markers like `$1234`.
+- **AppFolio** — qualifies sites by counting how many times **“apply now”** appears.
 
 ---
 
@@ -26,37 +24,40 @@ It does this by:
 You’ll need:  
 
 - **Python 3** installed on your computer  
-  - Check with:  
+  - Check your version with:  
     ```bash
     python3 --version
     ```  
-- Two Python libraries:  
+
+- Three Python libraries:  
     ```bash
-    pip3 install googlesearch-python requests
-    ```
-- Plug both of these lines individually and enter them in your terminal
+    pip3 install googlesearch-python requests beautifulsoup4
+    ```  
+
+  Install each line individually in your terminal.
+
 ---
 
 ## How to Use
 
-1. **Download the script**  
-   Save the code from `script.py` into a folder on your computer.  
+1. **Download the scripts**  
+   Save both `script.py` and `scraper_utils.py` into the same folder on your computer.  
 
-2. **Open the script** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
+2. **Open `script.py`** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
    ```python
    state = "Delaware"
 
-
 3. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
 
-4. **Open your terminal (or command prompt)** and go to the folder where you saved the script.
-   Example (if it’s on your Desktop):
+4. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
+   Example (if they’re on your Desktop):
 
    ```bash
-   cd ~/Desktop
+   cd ~/Desktop/(folder_name)
    ```
-  If you have placed it into a folder, right-click the folder and press Open Terminal at folder.
-  
+
+   If they’re in a subfolder, right-click the folder and choose **Open Terminal** (or **Open in Terminal**).
+
 5. **Run the script**:
 
    ```bash
@@ -70,27 +71,37 @@ You’ll need:
 When you run it, you’ll see something like this:
 
 ```text
+[+] Found good site (1/10): https://example1.managebuilding.com/Resident/public/rentals
+[+] Found good site (2/10): https://example2.managebuilding.com/Resident/public/rentals
+
+Found 2 qualifying websites for Buildium — Delaware:
+
+https://example1.managebuilding.com/Resident/public/rentals
+https://example2.managebuilding.com/Resident/public/rentals
+
+
 [+] Found good site (1/10): https://example1.appfolio.com/listings
 [+] Found good site (2/10): https://example2.appfolio.com/listings
 
-Found 2 qualifying websites for Delaware:
+Found 2 qualifying websites for AppFolio — Delaware:
 
 https://example1.appfolio.com/listings
 https://example2.appfolio.com/listings
 ```
 
-This means the script found **2 websites** in Delaware with **active rental listings**.
+This means the script found **2 Buildium** sites and **2 AppFolio** sites in Delaware with active rental listings.
 
 ---
 
 ## Optional Settings
 
-If you want to tweak how the script works, you can change these options inside the code:
+Inside `script.py`, you can tweak these options when calling `managebuilding_urls()` or `appfolio_urls()`:
 
-* `target_count=10` → How many websites you want it to find before stopping.
-* `min_occurrences=20` → How many times **“apply now”** must appear on the site for it to count as active.
-* `results_per_page=10` → How many Google results to grab at once.
-* `sleep_sec=1.0` → How many seconds to pause between checks (helps avoid being blocked).
+* `target_count=10` → How many good websites to find before stopping.
+* `min_occurrences=21` (ManageBuilding) → How many price markers (`$1234`) must appear on the page.
+* `min_occurrences=20` (AppFolio) → How many **“apply now”** must appear on the page.
+* `results_per_page=10` → How many Google results to fetch per batch.
+* `sleep_sec=1.0` → How many seconds to pause between requests (helps avoid being blocked).
 
 Most people don’t need to change these — just update the **state** and run.
 
@@ -100,8 +111,9 @@ Most people don’t need to change these — just update the **state** and run.
 
 * There’s a **hard cap of 1000 Google results** for safety.
 * Some sites may time out or be blocked — those are skipped automatically.
-* The script takes a little time if it’s checking lots of sites.
-* Works best when you pick full state names like `"Arizona"` or `"Texas"`.
+* The script takes longer if it checks lots of sites or if you increase thresholds.
+* Works best when you use full state names like `"Arizona"` or `"Texas"`.
+* Buildium uses **visible text parsing** (ignores JavaScript, styles, etc.), so `$` counts are more reliable.
 
 ---
 
@@ -110,5 +122,5 @@ Most people don’t need to change these — just update the **state** and run.
 If you just want to test it quickly:
 
 ```bash
-pip3 install googlesearch-python requests && python3 script.py
+pip3 install googlesearch-python requests beautifulsoup4 && python3 script.py
 ```

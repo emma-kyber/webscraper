@@ -5,22 +5,28 @@ with rate-limit backoff, jitter, UA rotation, and DDG fallback.
 
 from __future__ import annotations
 
-import random
 import sys
 import time
+import random
 from dataclasses import dataclass
 from typing import List, Set, Pattern, Optional
 
 import requests
 from requests import exceptions
 from bs4 import BeautifulSoup
-from googlesearch import search  # pip3 install googlesearch-python
+from googlesearch import search  # pip install googlesearch-python
+
+# Optional fallback search backend (DuckDuckGo)
+try:
+    # pip install duckduckgo-search
+    from duckduckgo_search import DDGS as DDGSearch  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - environment without duckduckgo-search
+    DDGSearch = None  # type: ignore[assignment]
 
 # ---- Tunables ---------------------------------------------------------------
 
 USER_AGENTS = [
-    # A few modern desktop UAs
-      (
+    (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
@@ -33,6 +39,7 @@ USER_AGENTS = [
         "Gecko/20100101 Firefox/124.0"
     ),
 ]
+
 DEFAULT_HEADERS = {"User-Agent": random.choice(USER_AGENTS)}
 TIMEOUT_SECS = 15.0
 MAX_RESULTS_CAP = 1000  # Safety cap to avoid unbounded search growth
@@ -55,48 +62,73 @@ def _sleep_with_jitter(base: float) -> None:
 
 
 def _google_search(query: str, num_results: int) -> List[str]:
-    # googlesearch-python doesn't expose headers; rely on backoff/fallback.
+    """Return up to num_results Google results for the query."""
+    # googlesearch-python does not expose headers; rely on backoff/fallback.
     return list(search(query, num_results=num_results))
 
+
 def _ddg_search(query: str, num_results: int) -> List[str]:
-    """DuckDuckGo fallback search using `ddgs` if installed."""
-    try:
-        from ddgs import DDGS
-    except ImportError:
+    """
+    DuckDuckGo fallback search using duckduckgo-search (DDGS).
+    Returns a list of result URLs or [] if backend unavailable.
+    """
+    if DDGSearch is None:
         return []
 
     try:
-        with DDGS() as ddgs:
+        # DDGS is a context manager; .text yields dicts with "href"
+        with DDGSearch() as ddgs:
             hits = ddgs.text(query, max_results=num_results)
-            return [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
-    except Exception as e:
-        print(f"DDG search error: {e}", file=sys.stderr)
+            return [
+                h.get("href")
+                for h in hits
+                if isinstance(h, dict) and h.get("href")
+            ]
+    except (RuntimeError, ValueError) as err:
+        print(f"DDG search error: {err}", file=sys.stderr)
         return []
+
 
 def get_candidates(query: str, num_results: int) -> List[str]:
     """
-    Try Google with exponential-style backoff on 429; then fall back to DDG.
+    Try Google with progressive backoff on 429; then fall back to DuckDuckGo.
     """
-    for i, backoff in enumerate(BACKOFFS + [None]):  # last attempt has no further backoff
+    for attempt, backoff in enumerate(BACKOFFS + [None], start=1):
         try:
             return _google_search(query, num_results)
-        except Exception as e:  # noqa: BLE001  (broad-exception-caught)
-            msg = str(e)
-            is_429 = ("429" in msg) or ("Too Many Requests" in msg) or ("sorry/index" in msg)
+        except requests.HTTPError as err:
+            msg = str(err)
+            is_429 = (
+                "429" in msg
+                or "Too Many Requests" in msg
+                or "sorry/index" in msg
+            )
             if is_429 and backoff is not None:
                 print(
-                    f"Google 429 — backing off {backoff}s (attempt {i+1}/{len(BACKOFFS)})",
+                    f"Google 429 — backing off {backoff}s "
+                    f"(attempt {attempt}/{len(BACKOFFS)})",
                     file=sys.stderr,
                 )
                 _sleep_with_jitter(backoff)
                 continue
+            print(f"Google search failed ({err}). Trying DuckDuckGo…",
+                  file=sys.stderr)
+        except Exception as err:  # noqa: BLE001 (library may raise generic)
+            print(f"Google search failed ({err}). Trying DuckDuckGo…",
+                  file=sys.stderr)
 
-            print(f"Google search failed ({e}). Trying DuckDuckGo…", file=sys.stderr)
-            ddg = _ddg_search(query, num_results)
-            if ddg:
-                return ddg
-            # If no fallback available or it returned empty, re-raise original error
-            raise
+        # Fallback to DDG
+        ddg = _ddg_search(query, num_results)
+        if ddg:
+            return ddg
+
+        # If DDG empty and we still have backoff retries, wait and loop
+        if backoff is not None:
+            _sleep_with_jitter(backoff)
+            continue
+
+        # Out of retries and no fallback
+        raise RuntimeError("No search backend returned results.") from None
 
 
 def visible_text(html: str) -> str:
@@ -119,9 +151,9 @@ def count_pattern_on_page(
     Returns 0 on any fetch/parse error.
     """
     try:
-        h = dict(headers or {})
-        h.setdefault("User-Agent", random.choice(USER_AGENTS))
-        resp = requests.get(url, headers=h, timeout=timeout)
+        hdrs = dict(headers or {})
+        hdrs.setdefault("User-Agent", random.choice(USER_AGENTS))
+        resp = requests.get(url, headers=hdrs, timeout=timeout)
         resp.raise_for_status()
         content = visible_text(resp.text) if only_visible else resp.text
         return len(pattern.findall(content))
@@ -143,7 +175,8 @@ def search_and_filter(
 ) -> List[str]:
     """
     Run a search with `query`, visit candidates, and keep URLs whose page
-    matches `pattern` at least `min_occurrences` times. Stops at `config.target_count`.
+    matches `pattern` at least `min_occurrences` times. Stops at
+    `config.target_count`.
     """
     seen: Set[str] = set()
     qualifying: List[str] = []
@@ -152,7 +185,7 @@ def search_and_filter(
     while len(qualifying) < config.target_count and num_results <= MAX_RESULTS_CAP:
         try:
             candidates = get_candidates(query, num_results=num_results)
-        except Exception as err:  # pylint: disable=broad-except
+        except Exception as err:  # noqa: BLE001
             print(f"Search failed: {err}", file=sys.stderr)
             break
 
@@ -166,7 +199,10 @@ def search_and_filter(
             occurrences = count_pattern_on_page(url, pattern)
             if occurrences >= min_occurrences:
                 qualifying.append(url)
-                print(f"[+] Found good site ({len(qualifying)}/{config.target_count}): {url}")
+                print(
+                    "[+] Found good site "
+                    f"({len(qualifying)}/{config.target_count}): {url}"
+                )
 
             _sleep_with_jitter(config.sleep_sec)
 
@@ -182,7 +218,7 @@ def run_search(
     min_occurrences: int,
     config: SearchConfig = SearchConfig(),
 ) -> List[str]:
-    """Thin wrapper so callers don’t duplicate the search/filter call signature."""
+    """Thin wrapper so callers don’t duplicate the call signature."""
     return search_and_filter(
         query=query,
         pattern=pattern,
@@ -192,7 +228,7 @@ def run_search(
 
 
 def print_results(state: str, urls: List[str]) -> None:
-    """Consistent, shared printing (avoids duplicate-code across scripts)."""
+    """Consistent, shared printing."""
     print(f"\nFound {len(urls)} qualifying websites for {state}:\n")
     for url in urls:
         print(url)

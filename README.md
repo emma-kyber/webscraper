@@ -126,8 +126,8 @@ Most people don’t need to change these — just update the **state** and run.
 
 ## Quick Start (One-Liner)
 
-If you just want to test it quickly:
+If you just want to test it quickly (in the terminal in your folder):
 
 ```bash
-pip3 install googlesearch-python requests beautifulsoup4 && python3 script.py
+python3 script.py
 ```

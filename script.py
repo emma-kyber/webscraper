@@ -11,7 +11,7 @@ import time
 from typing import List, Set
 
 import requests
-from requests.exceptions import RequestException, Timeout, HTTPError, ConnectionError
+from requests import exceptions
 from googlesearch import search
 
 
@@ -37,11 +37,17 @@ def _site_is_qualifying(
     """
     try:
         response = requests.get(url, headers=headers or DEFAULT_HEADERS, timeout=timeout)
-        # Optionally enforce 2xx only:
+        # Optional if you want to skip non-2xx:
         # response.raise_for_status()
         text = response.text.lower()
         return text.count("apply now") >= min_occurrences
-    except (Timeout, HTTPError, ConnectionError, RequestException, UnicodeDecodeError):
+    except (
+        exceptions.Timeout,
+        exceptions.HTTPError,
+        exceptions.ConnectionError,
+        exceptions.RequestException,
+        UnicodeDecodeError,
+    ):
         return False
 
 

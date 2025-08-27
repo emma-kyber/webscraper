@@ -40,7 +40,7 @@ You’ll need:
 ## How to Use
 
 1. **Download the script**  
-   Save the code from `find_appfolio.py` into a folder on your computer.  
+   Save the code from `script.py` into a folder on your computer.  
 
 2. **Open the script** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
    ```python
@@ -59,7 +59,7 @@ You’ll need:
 5. **Run the script**:
 
    ```bash
-   python3 find_appfolio.py
+   python3 script.py
    ```
 
 ---
@@ -109,5 +109,5 @@ Most people don’t need to change these — just update the **state** and run.
 If you just want to test it quickly:
 
 ```bash
-pip3 install googlesearch-python requests && python3 find_appfolio.py
+pip3 install googlesearch-python requests && python3 script.py
 ```

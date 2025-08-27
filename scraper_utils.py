@@ -112,7 +112,12 @@ def run_search(
     config: SearchConfig = SearchConfig(),
 ) -> List[str]:
     """Thin wrapper so callers don’t duplicate the search/filter call signature."""
-    return search_and_filter(query=query, pattern=pattern, min_occurrences=min_occurrences, config=config)
+    return search_and_filter(
+        query=query,
+        pattern=pattern,
+        min_occurrences=min_occurrences,
+        config=config,
+    )
 
 
 def print_results(state: str, urls: List[str]) -> None:

@@ -22,12 +22,10 @@ def managebuilding_urls(
     target_count: int = 10,
     min_occurrences: int = 21,
     results_per_page: int = 10,
-    sleep_sec: float = 1.0,
+    sleep_sec: float = 3.0,
 ) -> List[str]:
-    """Look up Buildium rental listing websites in Google for a given state."""
-    query = (
-        f'site:managebuilding.com inurl:"Resident/Public/Rentals" "{state}"'
-    )
+    """Look up Buildium rental listing websites in Google/DDG for a given state."""
+    query = f'site:managebuilding.com inurl:"Resident/Public/Rentals" "{state}"'
     config = SearchConfig(
         target_count=target_count,
         results_per_page=results_per_page,
@@ -46,9 +44,9 @@ def appfolio_urls(
     target_count: int = 10,
     min_occurrences: int = 20,
     results_per_page: int = 10,
-    sleep_sec: float = 1.0,
+    sleep_sec: float = 3.0,
 ) -> List[str]:
-    """Look up AppFolio rental listing websites in Google for a given state."""
+    """Look up AppFolio rental listing websites in Google/DDG for a given state."""
     query = f'site:appfolio.com/listings "{state}"'
     config = SearchConfig(
         target_count=target_count,
@@ -76,7 +74,7 @@ def find_urls_for_state(
 
 def main() -> None:
     """Run the search for a given state and print both lists."""
-    state = "Delaware"  # <-- Change to "Arizona", "TX", etc.
+    state = input("Enter state name or abbreviation: ").strip()
     mb_urls, af_urls = find_urls_for_state(state)
 
     print_results(f"Buildium — {state}", mb_urls)

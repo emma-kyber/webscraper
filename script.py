@@ -1,7 +1,7 @@
 """
-Find ManageBuilding and AppFolio rental listing URLs by state.
+Find Buildium and AppFolio rental listing URLs by state.
 
-- ManageBuilding: qualifies pages by counting visible price markers like "$1234".
+- Buildium: qualifies pages by counting visible price markers like "$1234".
 - AppFolio: qualifies pages by counting visible occurrences of "apply now".
 """
 
@@ -24,7 +24,7 @@ def managebuilding_urls(
     results_per_page: int = 10,
     sleep_sec: float = 1.0,
 ) -> List[str]:
-    """Look up ManageBuilding rental listing websites in Google for a given state."""
+    """Look up Buildium rental listing websites in Google for a given state."""
     query = (
         f'site:managebuilding.com inurl:"Resident/Public/Rentals" "{state}"'
     )
@@ -79,7 +79,7 @@ def main() -> None:
     state = "Delaware"  # <-- Change to "Arizona", "TX", etc.
     mb_urls, af_urls = find_urls_for_state(state)
 
-    print_results(f"ManageBuilding — {state}", mb_urls)
+    print_results(f"Buildium — {state}", mb_urls)
     print_results(f"AppFolio — {state}", af_urls)
 
 

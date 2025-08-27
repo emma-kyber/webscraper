@@ -25,13 +25,7 @@ This project helps you **find active rental listing websites by state** for two 
    Save both `script.py` and `scraper_utils.py` into the same folder on your computer.
    Or, download the zip through github in the code dropdown.
 
-3. **Open `script.py`** in a text editor (Notepad, VS Code, etc.) and look for this line at the bottom:  
-   ```python
-   state = "Delaware"
-
-4. Change `"Delaware"` to the state you want to search (examples: `"Arizona"`, `"CA"`, `"Texas"`).
-
-5. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
+2. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
    Example (if they’re on your Desktop):
 
    ```bash
@@ -40,7 +34,7 @@ This project helps you **find active rental listing websites by state** for two 
 
    If they’re in a subfolder, right-click the folder and choose **Open Terminal** (or **Open in Terminal**).
 
-6. **Requirements:**
+3. **Requirements:**
    You’ll need:  
 
 - **Python 3** installed on your computer  
@@ -50,18 +44,18 @@ This project helps you **find active rental listing websites by state** for two 
     python3 -m pip --version
     ```  
 
-- Three Python libraries:  
+- Four Python libraries:  
     ```bash
     pip3 install requests beautifulsoup4 googlesearch-python ddgs
     ```  
 
-  Install each line individually in your terminal inside your scraper folder.
-
-7. **Run the script**:
+4. **Run the script**:
 
    ```bash
    python3 script.py
    ```
+
+   Input State name or abbreviation.
 
 ---
 

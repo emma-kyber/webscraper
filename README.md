@@ -34,7 +34,7 @@ You’ll need:
     pip3 install googlesearch-python requests beautifulsoup4
     ```  
 
-  Install each line individually in your terminal.
+  Install each line individually in your terminal inside your scraper folder.
 
 ---
 

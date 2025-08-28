@@ -10,7 +10,7 @@ import sys
 import time
 import random
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Pattern, Set
+from typing import List, Optional, Pattern, Set
 
 import requests
 from requests import exceptions

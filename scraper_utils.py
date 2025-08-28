@@ -1,10 +1,11 @@
 """
-Shared scraping utilities: search + page qualification helpers
-with rate-limit backoff, jitter, UA rotation, and DDG fallback.
+Shared scraping utilities: resilient search + page qualification helpers
+with caching, retry-on-429, jitter, UA rotation, and opt-in Google fallback.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import random
@@ -14,37 +15,107 @@ from typing import List, Set, Pattern, Optional
 import requests
 from requests import exceptions
 from bs4 import BeautifulSoup
-from googlesearch import search  # pip install googlesearch-python
 
-# Optional fallback search backend (DuckDuckGo)
+# --- Search backends ---------------------------------------------------------
+
+# Prefer the renamed DuckDuckGo package; fall back to legacy name if needed.
 try:
-    # pip install duckduckgo-search
-    from duckduckgo_search import DDGS as DDGSEARCH  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover - environment without duckduckgo-search
-    DDGSEARCH = None  # type: ignore[assignment]
+    from ddgs import DDGS as DDGSEARCH  # pip install -U ddgs
+except ImportError:
+    try:
+        from duckduckgo_search import DDGS as DDGSEARCH  # legacy
+    except ImportError:
+        DDGSEARCH = None  # type: ignore
 
-# ---- Tunables ---------------------------------------------------------------
+# Optional SerpAPI (paid Google API) — set SERPAPI_KEY env var to enable
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+
+# Optional googlesearch-python (fragile; only used if DISABLE_GOOGLE=0)
+try:
+    from googlesearch import search as GOOGLESEARCH  # pip install googlesearch-python
+except Exception:
+    GOOGLESEARCH = None  # type: ignore
+
+# Transparent caching to avoid re-fetching pages across runs (24h)
+try:
+    import requests_cache  # pip install requests-cache
+    requests_cache.install_cache(
+        "scraper_cache",
+        backend="sqlite",
+        expire_after=24 * 60 * 60,  # 24 hours
+        allowable_methods=("GET",),
+        allowable_codes=(200,),
+    )
+except Exception:
+    pass
+
+# --- Tunables ----------------------------------------------------------------
 
 USER_AGENTS = [
+    # macOS Chrome
     (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
+    # Windows Chrome
     (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
+    # Ubuntu Firefox
     (
         "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) "
+        "Gecko/20100101 Firefox/124.0"
+    ),
+    # macOS Safari
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15"
+    ),
+    # iPhone Safari
+    (
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1"
+    ),
+    # iPad Safari
+    (
+        "Mozilla/5.0 (iPad; CPU OS 16_4 like Mac OS X) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1"
+    ),
+    # Android Chrome
+    (
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+    ),
+    # Windows Edge
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 "
+        "Edg/124.0.2478.67"
+    ),
+    # Linux Chrome
+    (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    # Windows Firefox
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) "
         "Gecko/20100101 Firefox/124.0"
     ),
 ]
 
 DEFAULT_HEADERS = {"User-Agent": random.choice(USER_AGENTS)}
-TIMEOUT_SECS = 15.0
-MAX_RESULTS_CAP = 1000  # Safety cap to avoid unbounded search growth
-BACKOFFS = [5, 20, 45]  # Seconds to back off on repeated 429s
-JITTER_RANGE = (0.25, 0.75)  # Add some randomness to sleeps
+TIMEOUT_SECS = 20.0
+MAX_RESULTS_CAP = 1000
+BACKOFFS = [10, 30, 60]  # used for search fallback retries
+JITTER_RANGE = (0.5, 1.0)
+PER_HOST_DELAY = 1.0
+RETRY_STATUS = {429, 500, 502, 503, 504}
+
+# Default to *disabling* Google scraping fallback (prevents 429s).
+# Set DISABLE_GOOGLE=0 to enable googlesearch fallback.
+DISABLE_GOOGLE = os.getenv("DISABLE_GOOGLE", "1") == "1"
 
 # ----------------------------------------------------------------------------
 
@@ -53,88 +124,129 @@ JITTER_RANGE = (0.25, 0.75)  # Add some randomness to sleeps
 class SearchConfig:
     """Config for paginated crawling + throttling."""
     target_count: int = 10
-    results_per_page: int = 8
-    sleep_sec: float = 3.0
+    results_per_page: int = 5
+    sleep_sec: float = 5.0
 
 
 def _sleep_with_jitter(base: float) -> None:
     time.sleep(base + random.uniform(*JITTER_RANGE))
 
 
-def _google_search(query: str, num_results: int) -> List[str]:
-    """Return up to num_results Google results for the query."""
-    # googlesearch-python does not expose headers; rely on backoff/fallback.
-    return list(search(query, num_results=num_results))
+# --- Search helpers ----------------------------------------------------------
+
+def _serpapi_search(query: str, num_results: int) -> List[str]:
+    """Optional SerpAPI Google search if SERPAPI_KEY set; else []."""
+    if not SERPAPI_KEY:
+        return []
+    try:
+        from serpapi import GoogleSearch  # pip install google-search-results
+        params = {"engine": "google", "q": query, "num": min(num_results, 100), "api_key": SERPAPI_KEY}
+        results = GoogleSearch(params).get_dict()
+        organic = results.get("organic_results", []) or []
+        return [item.get("link") for item in organic if item.get("link")]
+    except Exception as e:
+        print(f"SerpAPI error: {e}", file=sys.stderr)
+        return []
 
 
 def _ddg_search(query: str, num_results: int) -> List[str]:
     """
-    DuckDuckGo fallback search using duckduckgo-search (DDGS).
-    Returns a list of result URLs or [] if backend unavailable.
+    Robust DuckDuckGo search that works across ddgs/duckduckgo_search variants.
+    Retries a few times with exponential backoff. Returns [] on failure.
     """
     if DDGSEARCH is None:
         return []
 
-    try:
-        # DDGS is a context manager; .text yields dicts with "href"
-        with DDGSEARCH() as ddgs:
-            hits = ddgs.text(query, max_results=num_results)
-            return [
-                h.get("href")
-                for h in hits
-                if isinstance(h, dict) and h.get("href")
-            ]
-    except (RuntimeError, ValueError) as err:
-        print(f"DDG search error: {err}", file=sys.stderr)
+    tries = 3
+    backoff = 2.0
+
+    for attempt in range(1, tries + 1):
+        ddg_obj = None
+        try:
+            ddg_obj = DDGSEARCH()
+            hits_iter = ddg_obj.text(query, max_results=num_results)
+            hits = list(hits_iter) if hits_iter is not None else []
+            urls = [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
+            if urls:
+                # close if supported
+                try:
+                    close = getattr(ddg_obj, "close", None)
+                    if callable(close):
+                        close()
+                except Exception:
+                    pass
+                return urls
+        except (RuntimeError, ValueError) as err:
+            print(f"DDG search error (attempt {attempt}/{tries}): {err}", file=sys.stderr)
+        except Exception as err:
+            print(f"DDG unexpected error (attempt {attempt}/{tries}): {err}", file=sys.stderr)
+        finally:
+            try:
+                if ddg_obj is not None:
+                    close = getattr(ddg_obj, "close", None)
+                    if callable(close):
+                        close()
+            except Exception:
+                pass
+
+        _sleep_with_jitter(backoff)
+        backoff *= 2
+
+    return []
+
+
+def _google_search(query: str, num_results: int) -> List[str]:
+    """Return up to num_results Google results for the query (googlesearch-python)."""
+    if GOOGLESEARCH is None:
         return []
+    return list(GOOGLESEARCH(query, num_results=num_results))
 
 
 def get_candidates(query: str, num_results: int) -> List[str]:
     """
-    Try Google with progressive backoff on 429; then fall back to DuckDuckGo.
+    Prefer resilient/clean backends to minimize 429s:
+      1) SerpAPI (if configured)
+      2) DuckDuckGo (ddgs)
+      3) Google (googlesearch-python) ONLY if DISABLE_GOOGLE=0
     """
-    for attempt, backoff in enumerate(BACKOFFS + [None], start=1):
-        try:
-            return _google_search(query, num_results)
-        except requests.HTTPError as err:
-            msg = str(err)
-            is_429 = (
-                "429" in msg
-                or "Too Many Requests" in msg
-                or "sorry/index" in msg
-            )
-            if is_429 and backoff is not None:
-                print(
-                    f"Google 429 — backing off {backoff}s "
-                    f"(attempt {attempt}/{len(BACKOFFS)})",
-                    file=sys.stderr,
-                )
+    # 0) SerpAPI (paid, reliable)
+    sa = _serpapi_search(query, num_results)
+    if sa:
+        return sa
+
+    # 1) DDG primary
+    ddg = _ddg_search(query, num_results)
+    if ddg:
+        return ddg
+
+    # 2) Optional Google fallback (disabled by default)
+    if not DISABLE_GOOGLE:
+        for attempt, backoff in enumerate(BACKOFFS + [None], start=1):
+            try:
+                g = _google_search(query, num_results)
+                if g:
+                    return g
+            except Exception as err:
+                msg = str(err)
+                is_429 = ("429" in msg) or ("Too Many Requests" in msg) or ("sorry/index" in msg)
+                if is_429 and backoff is not None:
+                    print(
+                        f"Google 429 — backing off {backoff}s (attempt {attempt}/{len(BACKOFFS)})",
+                        file=sys.stderr,
+                    )
+                    _sleep_with_jitter(backoff)
+                    continue
+                print(f"Google search failed ({err}).", file=sys.stderr)
+
+            if backoff is not None:
                 _sleep_with_jitter(backoff)
                 continue
-            print(
-                f"Google search failed ({err}). Trying DuckDuckGo…",
-                file=sys.stderr,
-            )
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            # googlesearch library can raise generic Exception; fall back.
-            print(
-                f"Google search failed ({err}). Trying DuckDuckGo…",
-                file=sys.stderr,
-            )
 
-        # Fallback to DDG
-        ddg = _ddg_search(query, num_results)
-        if ddg:
-            return ddg
+    # Nothing worked
+    raise RuntimeError("No search backend returned results.")
 
-        # If DDG empty and we still have backoff retries, wait and loop
-        if backoff is not None:
-            _sleep_with_jitter(backoff)
-            continue
 
-        # Out of retries and no fallback
-        raise RuntimeError("No search backend returned results.") from None
-
+# --- Fetching & parsing ------------------------------------------------------
 
 def visible_text(html: str) -> str:
     """Return visible text by stripping scripts, styles, etc."""
@@ -153,24 +265,46 @@ def count_pattern_on_page(
 ) -> int:
     """
     Fetch a page and count occurrences of a compiled regex pattern.
-    Returns 0 on any fetch/parse error.
+    Returns 0 on any fetch/parse error. Retries on transient errors.
     """
-    try:
-        hdrs = dict(headers or {})
-        hdrs.setdefault("User-Agent", random.choice(USER_AGENTS))
-        resp = requests.get(url, headers=hdrs, timeout=timeout)
-        resp.raise_for_status()
-        content = visible_text(resp.text) if only_visible else resp.text
-        return len(pattern.findall(content))
-    except (
-        exceptions.Timeout,
-        exceptions.HTTPError,
-        exceptions.ConnectionError,
-        exceptions.RequestException,
-        UnicodeDecodeError,
-    ):
-        return 0
+    tries = 3
+    backoff = 3.0
+    for attempt in range(1, tries + 1):
+        try:
+            hdrs = dict(headers or {})
+            hdrs.setdefault("User-Agent", random.choice(USER_AGENTS))
+            hdrs.setdefault("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            hdrs.setdefault("Accept-Language", "en-US,en;q=0.9")
+            hdrs.setdefault("Connection", "close")
 
+            time.sleep(PER_HOST_DELAY)
+            resp = requests.get(url, headers=hdrs, timeout=timeout)
+            status = getattr(resp, "status_code", 0)
+            if status in RETRY_STATUS:
+                if attempt < tries:
+                    _sleep_with_jitter(backoff)
+                    backoff *= 2
+                    continue
+                return 0
+
+            resp.raise_for_status()
+            content = visible_text(resp.text) if only_visible else resp.text
+            return len(pattern.findall(content))
+        except (
+            exceptions.Timeout,
+            exceptions.ConnectionError,
+            exceptions.ChunkedEncodingError,
+        ):
+            if attempt < tries:
+                _sleep_with_jitter(backoff)
+                backoff *= 2
+                continue
+            return 0
+        except (exceptions.HTTPError, exceptions.RequestException, UnicodeDecodeError):
+            return 0
+
+
+# --- Orchestration -----------------------------------------------------------
 
 def search_and_filter(
     query: str,
@@ -232,8 +366,8 @@ def run_search(
     )
 
 
-def print_results(state: str, urls: List[str]) -> None:
+def print_results(title: str, urls: List[str]) -> None:
     """Consistent, shared printing."""
-    print(f"\nFound {len(urls)} qualifying websites for {state}:\n")
+    print(f"\nFound {len(urls)} qualifying websites for {title}:\n")
     for url in urls:
         print(url)

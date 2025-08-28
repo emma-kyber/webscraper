@@ -1,4 +1,15 @@
+# Core HTTP + parsing
 requests
-googlesearch-python
 beautifulsoup4
-duckduckgo-search>=6.2.10
+
+# DuckDuckGo search (new library)
+ddgs
+
+# Google scraping fallback (fragile; disable with DISABLE_GOOGLE=1)
+googlesearch-python
+
+# Transparent caching
+requests-cache
+
+# Optional: SerpAPI (paid Google API, set SERPAPI_KEY to use)
+google-search-results

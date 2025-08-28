@@ -1,0 +1,27 @@
+line-length = 100
+target-version = "py38"
+
+[lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "W",   # pycodestyle warnings
+  "I",   # import sorting
+  "UP",  # pyupgrade
+  "B",   # bugbear
+  "SIM", # simplify
+]
+ignore = [
+  # Allow controlled prints for CLI feedback
+  "T201",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[lint.isort]
+known-first-party = ["scraper_utils"]
+combine-as-imports = true
+

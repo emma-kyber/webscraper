@@ -6,15 +6,15 @@ with caching, retry-on-429, jitter, UA rotation, and opt-in Google fallback.
 from __future__ import annotations
 
 import os
+import random
 import sys
 import time
-import random
 from dataclasses import dataclass
-from typing import List, Set, Pattern, Optional
+from typing import List, Optional, Pattern, Set
 
 import requests
-from requests import exceptions
 from bs4 import BeautifulSoup
+from requests import exceptions
 
 # --- Search backends ---------------------------------------------------------
 

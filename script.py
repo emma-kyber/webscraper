@@ -7,11 +7,11 @@ Find Buildium (ManageBuilding) and AppFolio rental listing URLs by state.
 
 from __future__ import annotations
 
-import re
 import argparse
+import re
 from typing import List, Tuple
 
-from scraper_utils import SearchConfig, run_search, print_results
+from scraper_utils import SearchConfig, print_results, run_search
 
 # Patterns
 PRICE_REGEX = re.compile(r"\$\s*\d")  # "$" followed by at least one digit

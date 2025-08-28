@@ -10,10 +10,11 @@ This project finds **active rental listing websites by state** for two major pro
 ## Table of Contents
 
 - [How It Works](#how-it-works)
+- [Under the Hood](#under-the-hood)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Example Output](#example-output)
-- [Optional Settings](#optional-settings)
+- [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Notes](#notes)
 - [Quick Start (One-Liner)](#quick-start-one-liner)
@@ -22,10 +23,25 @@ This project finds **active rental listing websites by state** for two major pro
 
 ## How It Works
 
-1. The script searches the web for Buildium and AppFolio listing pages using DuckDuckGo and, optionally, Google.
-2. Each candidate URL is fetched and parsed with BeautifulSoup.
-3. Pages are considered **good** when they contain a minimum number of price markers (`$1234`) for Buildium or the phrase **"apply now"** for AppFolio.
-4. Results are cached with `requests-cache` to avoid redundant network calls.
+1. The script issues search queries for Buildium and AppFolio listing pages.
+2. Candidate URLs are fetched and the **visible text** is extracted with BeautifulSoup.
+3. Pages qualify when they contain many price markers (`$1234`) for Buildium or the phrase **"apply now"** for AppFolio.
+4. Found URLs are returned once the target count is met and printed for easy copy‑paste.
+
+---
+
+## Under the Hood
+
+The project is more than a simple scraper. Key implementation details:
+
+- **Pluggable search backends.** Tries SerpAPI first (if `SERPAPI_KEY` is set), then DuckDuckGo, and finally falls back to Google if `DISABLE_GOOGLE=0`.
+- **Transparent caching.** `requests-cache` stores page responses in `scraper_cache.sqlite` for 24 hours to avoid re-fetching the same content.
+- **Rate‑limit resilience.** Each request rotates through multiple realistic User‑Agent strings, sleeps with jitter, and retries on transient HTTP errors or 429s.
+- **Pattern qualification.** `count_pattern_on_page()` fetches a page and counts regex matches in the visible text, ignoring scripts and styles.
+- **Search orchestration.** `search_and_filter()` loops over paginated search results until enough qualifying URLs are collected or a cap is reached.
+- **Reusable configuration.** The `SearchConfig` dataclass centralizes throttling and pagination controls used across all helpers.
+- **ManageBuilding variants.** `managebuilding_urls()` cycles through multiple path/case query patterns to surface more Buildium listings.
+- **CLI wrapper.** `script.py` exposes a command‑line interface that calls `managebuilding_urls()` and `appfolio_urls()` for a given state and prints results.
 
 ---
 
@@ -80,15 +96,22 @@ https://example2.appfolio.com/listings
 
 ---
 
-## Optional Settings
+## Configuration
 
-Adjust these arguments in `script.py` when calling `managebuilding_urls()` or `appfolio_urls()`:
+### CLI Arguments
 
-- `target_count=10` – stop after finding this many good sites.
-- `min_occurrences=21` (Buildium) – minimum `$1234` markers.
-- `min_occurrences=20` (AppFolio) – minimum "apply now" phrases.
-- `results_per_page=10` – number of search results fetched per batch.
-- `sleep_sec=1.0` – pause between requests to avoid rate limits.
+You can tweak these parameters when running `script.py`:
+
+- `--target` – number of qualifying sites to collect (default: 10).
+- `--mb-min` – minimum `$1234` markers for Buildium pages (default: 21).
+- `--af-min` – minimum "apply now" phrases for AppFolio pages (default: 20).
+- `--per-page` – search results retrieved per batch (default: 5).
+- `--sleep` – base delay between requests in seconds (default: 5.0).
+
+### Environment Variables
+
+- `DISABLE_GOOGLE` – set to `0` to enable Google scraping fallback (default: `1`).
+- `SERPAPI_KEY` – optional key to use the SerpAPI Google backend.
 
 ---
 

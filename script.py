@@ -85,46 +85,79 @@ def find_urls_for_state(
     state: str,
     mb_min_prices: int = 21,
     af_min_apply_now: int = 20,
-    target_count: int = 10,
-    results_per_page: int = 5,
-    sleep_sec: float = 5.0,
+    config: SearchConfig = SearchConfig(),
 ) -> Tuple[List[str], List[str]]:
-    """Return (managebuilding_urls, appfolio_urls) for the given state."""
+    """Return `(managebuilding_urls, appfolio_urls)` for the given state."""
     mb = managebuilding_urls(
         state,
-        target_count=target_count,
+        target_count=config.target_count,
         min_occurrences=mb_min_prices,
-        results_per_page=results_per_page,
-        sleep_sec=sleep_sec,
+        results_per_page=config.results_per_page,
+        sleep_sec=config.sleep_sec,
     )
     af = appfolio_urls(
         state,
-        target_count=target_count,
+        target_count=config.target_count,
         min_occurrences=af_min_apply_now,
-        results_per_page=results_per_page,
-        sleep_sec=sleep_sec,
+        results_per_page=config.results_per_page,
+        sleep_sec=config.sleep_sec,
     )
     return mb, af
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Find Buildium/AppFolio rental listing URLs by state.")
-    parser.add_argument("state", nargs="?", help='State name or abbreviation (e.g., "Arizona" or "AZ")')
-    parser.add_argument("--target", type=int, default=10, help="Target number of qualifying sites to collect.")
-    parser.add_argument("--mb-min", type=int, default=21, help='Min "$1234" occurrences for ManageBuilding.')
-    parser.add_argument("--af-min", type=int, default=20, help='Min "apply now" occurrences for AppFolio.')
-    parser.add_argument("--per-page", type=int, default=5, help="Search results per page to request.")
-    parser.add_argument("--sleep", type=float, default=5.0, help="Base sleep (seconds) between requests.")
+    """CLI entry point for finding rental listing URLs by state."""
+    parser = argparse.ArgumentParser(
+        description="Find Buildium/AppFolio rental listing URLs by state."
+    )
+    parser.add_argument(
+        "state",
+        nargs="?",
+        help='State name or abbreviation (e.g., "Arizona" or "AZ")',
+    )
+    parser.add_argument(
+        "--target",
+        type=int,
+        default=10,
+        help="Target number of qualifying sites to collect.",
+    )
+    parser.add_argument(
+        "--mb-min",
+        type=int,
+        default=21,
+        help='Min "$1234" occurrences for ManageBuilding.',
+    )
+    parser.add_argument(
+        "--af-min",
+        type=int,
+        default=20,
+        help='Min "apply now" occurrences for AppFolio.',
+    )
+    parser.add_argument(
+        "--per-page",
+        type=int,
+        default=5,
+        help="Search results per page to request.",
+    )
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=5.0,
+        help="Base sleep (seconds) between requests.",
+    )
     args = parser.parse_args()
 
     state = args.state or input("Enter state name or abbreviation: ").strip()
+    config = SearchConfig(
+        target_count=args.target,
+        results_per_page=args.per_page,
+        sleep_sec=args.sleep,
+    )
     mb_urls, af_urls = find_urls_for_state(
         state,
         mb_min_prices=args.mb_min,
         af_min_apply_now=args.af_min,
-        target_count=args.target,
-        results_per_page=args.per_page,
-        sleep_sec=args.sleep,
+        config=config,
     )
 
     print_results(f"Buildium — {state}", mb_urls)

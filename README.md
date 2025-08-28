@@ -19,6 +19,30 @@ This project helps you **find active rental listing websites by state** for two 
 
 ---
 
+**Updates!!**
+
+Fixing the timeout issue: 
+
+- Redownload the new zip!
+
+- paste this into you folder terminal before running again
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m pip uninstall -y duckduckgo-search
+
+```
+
+Troubleshooting (fast)
+
+- “This package has been renamed” warning → you still have duckduckgo-search. Uninstall it and ensure ddgs installed.
+
+- “No search backend returned results” → check DISABLE_GOOGLE=1 is set, ensure ddgs is installed, try full state name (“Texas” vs “TX”), and re-run.
+
+- Still slow / rate-limited on pages → that’s fetch-side; it’s already retrying with jitter. You can bump --sleep 6 and keep --per-page 5.
+
+
+---
+
 ## How to Use
 
 **1. Download the folder**
@@ -58,14 +82,27 @@ __pycache__
    ```
 This will install everything listed in requirements.txt:
 ```text
+# Core HTTP + parsing
 requests
-googlesearch-python
 beautifulsoup4
-duckduckgo-search
+
+# DuckDuckGo search (new library)
+ddgs
+
+# Google scraping fallback (fragile; disable with DISABLE_GOOGLE=1)
+googlesearch-python
+
+# Transparent caching
+requests-cache
+
+# Optional: SerpAPI (paid Google API, set SERPAPI_KEY to use)
+google-search-results
+
 ```
 
 **3. Run the scraper**
 ```bash
+export DISABLE_GOOGLE=1
 python3 script.py
 ```
 
@@ -129,5 +166,6 @@ Most people don’t need to change these — just update the **state** and run.
 If you just want to test it quickly (in the terminal in your folder):
 
 ```bash
+export DISABLE_GOOGLE=1
 python3 script.py
 ```

@@ -21,41 +21,55 @@ This project helps you **find active rental listing websites by state** for two 
 
 ## How to Use
 
-1. **Download the scripts**  
-   Save both `script.py` and `scraper_utils.py` into the same folder on your computer.
-   Or, download the zip through github in the code dropdown.
+**1. Download the folder**
 
-2. **Open your terminal (or command prompt)** and navigate to the folder where you saved the files.
-   Example (if they’re on your Desktop):
+Get the project folder as a .zip and unzip it anywhere on your computer.
+You should see:
+```bash
+script.py
+README.md
+requirements.txt
+scraper_utils.py
+__pycache__
+```
 
+**2. Requirements**
+
+   Open your terminal (or command prompt) and navigate to that folder.
+   Example:
    ```bash
-   cd ~/Desktop/(folder_name)
+   cd ~/Desktop/webscraper-main
    ```
 
-   If they’re in a subfolder, right-click the folder and choose **Open Terminal** (or **Open in Terminal**).
-
-3. **Requirements:**
-   You’ll need:  
-
-- **Python 3** installed on your computer  
-  - Check your version with:  
-    ```bash
-    python3 -m pip install --upgrade pip
-    python3 -m pip --version
-    ```  
-
-- Four Python libraries:  
-    ```bash
-    pip3 install requests beautifulsoup4 googlesearch-python ddgs
-    ```  
-
-4. **Run the script**:
-
+   Check if you have Python:
    ```bash
-   python3 script.py
+   python3 --version
    ```
+   If you see a version number (e.g. Python 3.13.5), you’re good.
+  
+   If you don’t have Python 3, download and install it here: 
+   https://www.python.org/downloads/
+   
+   
+   Then run:
+   ```bash
+   python3 -m pip install --upgrade pip
+   python3 -m pip install -r requirements.txt
+   ```
+This will install everything listed in requirements.txt:
+```text
+requests
+googlesearch-python
+beautifulsoup4
+duckduckgo-search
+```
 
-   Input State name or abbreviation.
+**3. Run the scraper**
+```bash
+python3 script.py
+```
+
+You’ll be prompted to enter a state name or abbreviation (e.g. Arizona, CA, Texas).
 
 ---
 
@@ -112,8 +126,8 @@ Most people don’t need to change these — just update the **state** and run.
 
 ## Quick Start (One-Liner)
 
-If you just want to test it quickly:
+If you just want to test it quickly (in the terminal in your folder):
 
 ```bash
-pip3 install googlesearch-python requests beautifulsoup4 && python3 script.py
+python3 script.py
 ```

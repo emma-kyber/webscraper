@@ -179,12 +179,11 @@ def _ddg_search(query: str, num_results: int) -> List[str]:
             hits = list(hits_iter) if hits_iter is not None else []
             urls = [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
             if urls:
-                close_func: Optional[Callable[[], None]] = getattr(ddg_obj, "close", None)
-                if callable(close_func):
-                    try:
-                        close_func()
-                    except OSError:
-                        pass
+                try:
+                    if ddg_obj is not None and hasattr(ddg_obj, "close"):
+                        ddg_obj.close()  # type: ignore[attr-defined]
+                except (OSError, TypeError, AttributeError):
+                    pass
                 return urls
         except (RuntimeError, ValueError) as err:
             print(
@@ -197,14 +196,11 @@ def _ddg_search(query: str, num_results: int) -> List[str]:
                 file=sys.stderr,
             )
         finally:
-            close_func = None
-            if ddg_obj is not None:
-                close_func = getattr(ddg_obj, "close", None)
-            if callable(close_func):
-                try:
-                    close_func()
-                except OSError:
-                    pass
+            try:
+                if ddg_obj is not None and hasattr(ddg_obj, "close"):
+                    ddg_obj.close()  # type: ignore[attr-defined]
+            except (OSError, TypeError, AttributeError):
+                pass
 
         _sleep_with_jitter(backoff)
         backoff *= 2

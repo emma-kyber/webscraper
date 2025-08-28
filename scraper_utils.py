@@ -10,11 +10,18 @@ import random
 import sys
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Pattern, Set
+from typing import Callable, List, Optional, Pattern, Set
 
 import requests
 from bs4 import BeautifulSoup
 from requests import exceptions
+
+# Optional SerpAPI (paid Google API) — set SERPAPI_KEY env var to enable
+try:
+    from serpapi import GoogleSearch, SerpApiError  # pip install google-search-results
+except ImportError:
+    GoogleSearch = None  # type: ignore
+    SerpApiError = Exception  # type: ignore
 
 # --- Search backends ---------------------------------------------------------
 
@@ -33,7 +40,7 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 # Optional googlesearch-python (fragile; only used if DISABLE_GOOGLE=0)
 try:
     from googlesearch import search as GOOGLESEARCH  # pip install googlesearch-python
-except Exception:
+except ImportError:
     GOOGLESEARCH = None  # type: ignore
 
 # Transparent caching to avoid re-fetching pages across runs (24h)
@@ -46,8 +53,8 @@ try:
         allowable_methods=("GET",),
         allowable_codes=(200,),
     )
-except Exception:
-    pass
+except ImportError:
+    requests_cache = None  # type: ignore
 
 # --- Tunables ----------------------------------------------------------------
 
@@ -136,15 +143,19 @@ def _sleep_with_jitter(base: float) -> None:
 
 def _serpapi_search(query: str, num_results: int) -> List[str]:
     """Optional SerpAPI Google search if SERPAPI_KEY set; else []."""
-    if not SERPAPI_KEY:
+    if not SERPAPI_KEY or GoogleSearch is None:
         return []
     try:
-        from serpapi import GoogleSearch  # pip install google-search-results
-        params = {"engine": "google", "q": query, "num": min(num_results, 100), "api_key": SERPAPI_KEY}
+        params = {
+            "engine": "google",
+            "q": query,
+            "num": min(num_results, 100),
+            "api_key": SERPAPI_KEY,
+        }
         results = GoogleSearch(params).get_dict()
         organic = results.get("organic_results", []) or []
         return [item.get("link") for item in organic if item.get("link")]
-    except Exception as e:
+    except (SerpApiError, requests.RequestException, ValueError) as e:
         print(f"SerpAPI error: {e}", file=sys.stderr)
         return []
 
@@ -168,26 +179,32 @@ def _ddg_search(query: str, num_results: int) -> List[str]:
             hits = list(hits_iter) if hits_iter is not None else []
             urls = [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
             if urls:
-                # close if supported
-                try:
-                    close = getattr(ddg_obj, "close", None)
-                    if callable(close):
-                        close()
-                except Exception:
-                    pass
+                close_func: Optional[Callable[[], None]] = getattr(ddg_obj, "close", None)
+                if close_func:
+                    try:
+                        close_func()
+                    except OSError:
+                        pass
                 return urls
         except (RuntimeError, ValueError) as err:
-            print(f"DDG search error (attempt {attempt}/{tries}): {err}", file=sys.stderr)
-        except Exception as err:
-            print(f"DDG unexpected error (attempt {attempt}/{tries}): {err}", file=sys.stderr)
+            print(
+                f"DDG search error (attempt {attempt}/{tries}): {err}",
+                file=sys.stderr,
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            print(
+                f"DDG unexpected error (attempt {attempt}/{tries}): {err}",
+                file=sys.stderr,
+            )
         finally:
-            try:
-                if ddg_obj is not None:
-                    close = getattr(ddg_obj, "close", None)
-                    if callable(close):
-                        close()
-            except Exception:
-                pass
+            close_func = None
+            if ddg_obj is not None:
+                close_func = getattr(ddg_obj, "close", None)
+            if close_func:
+                try:
+                    close_func()
+                except OSError:
+                    pass
 
         _sleep_with_jitter(backoff)
         backoff *= 2
@@ -226,7 +243,7 @@ def get_candidates(query: str, num_results: int) -> List[str]:
                 g = _google_search(query, num_results)
                 if g:
                     return g
-            except Exception as err:
+            except Exception as err:  # pylint: disable=broad-exception-caught
                 msg = str(err)
                 is_429 = ("429" in msg) or ("Too Many Requests" in msg) or ("sorry/index" in msg)
                 if is_429 and backoff is not None:
@@ -273,7 +290,10 @@ def count_pattern_on_page(
         try:
             hdrs = dict(headers or {})
             hdrs.setdefault("User-Agent", random.choice(USER_AGENTS))
-            hdrs.setdefault("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            hdrs.setdefault(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             hdrs.setdefault("Accept-Language", "en-US,en;q=0.9")
             hdrs.setdefault("Connection", "close")
 

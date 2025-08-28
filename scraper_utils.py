@@ -14,6 +14,7 @@ from typing import Callable, List, Optional, Pattern, Set
 
 import requests
 from requests import exceptions
+from bs4 import BeautifulSoup
 
 # Optional SerpAPI (paid Google API) — set SERPAPI_KEY env var to enable
 try:
@@ -179,7 +180,7 @@ def _ddg_search(query: str, num_results: int) -> List[str]:
             urls = [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
             if urls:
                 close_func: Optional[Callable[[], None]] = getattr(ddg_obj, "close", None)
-                if close_func:
+                if callable(close_func):
                     try:
                         close_func()
                     except OSError:
@@ -199,7 +200,7 @@ def _ddg_search(query: str, num_results: int) -> List[str]:
             close_func = None
             if ddg_obj is not None:
                 close_func = getattr(ddg_obj, "close", None)
-            if close_func:
+            if callable(close_func):
                 try:
                     close_func()
                 except OSError:

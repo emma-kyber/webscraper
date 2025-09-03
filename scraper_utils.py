@@ -1,389 +1,391 @@
-"""
-Shared scraping utilities: resilient search + page qualification helpers
-with caching, retry-on-429, jitter, UA rotation, and opt-in Google fallback.
-"""
-
+# scraper_utils.py
 from __future__ import annotations
 
 import os
-import sys
+import re
 import time
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Pattern, Set
+from typing import Iterable, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
-from requests import exceptions
 from bs4 import BeautifulSoup
 
-# Optional SerpAPI (paid Google API) — set SERPAPI_KEY env var to enable
+# Optional caching (SQLite in project root)
 try:
-    from serpapi import GoogleSearch, SerpApiError  # pip install google-search-results
-except ImportError:
-    GoogleSearch = None  # type: ignore
-    SerpApiError = Exception  # type: ignore
+    import requests_cache  # type: ignore
+except Exception:  # pragma: no cover
+    requests_cache = None  # graceful fallback
 
-# --- Search backends ---------------------------------------------------------
-
-# Prefer the renamed DuckDuckGo package; fall back to legacy name if needed.
+# --- Optional search backends ---
+# 1) DuckDuckGo (preferred)
 try:
-    from ddgs import DDGS as DDGSEARCH  # pip install -U ddgs
-except ImportError:
-    try:
-        from duckduckgo_search import DDGS as DDGSEARCH  # legacy
-    except ImportError:
-        DDGSEARCH = None  # type: ignore
+    from ddgs import DDGS  # type: ignore
+except Exception:  # pragma: no cover
+    DDGS = None  # noqa: N816
 
-# Optional SerpAPI (paid Google API) — set SERPAPI_KEY env var to enable
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-
-# Optional googlesearch-python (fragile; only used if DISABLE_GOOGLE=0)
+# 2) Google scraping fallback (fragile; can be disabled)
 try:
-    from googlesearch import search as GOOGLESEARCH  # pip install googlesearch-python
-except ImportError:
-    GOOGLESEARCH = None  # type: ignore
+    from googlesearch import search as google_search  # type: ignore
+except Exception:  # pragma: no cover
+    google_search = None
 
-# Transparent caching to avoid re-fetching pages across runs (24h)
+# 3) SerpAPI (paid, if SERPAPI_KEY provided)
 try:
-    import requests_cache  # pip install requests-cache
-    requests_cache.install_cache(
-        "scraper_cache",
-        backend="sqlite",
-        expire_after=24 * 60 * 60,  # 24 hours
-        allowable_methods=("GET",),
-        allowable_codes=(200,),
-    )
-except ImportError:
-    requests_cache = None  # type: ignore
+    from serpapi import GoogleSearch  # type: ignore
+except Exception:  # pragma: no cover
+    GoogleSearch = None
 
-# --- Tunables ----------------------------------------------------------------
 
-USER_AGENTS = [
-    # macOS Chrome
-    (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    # Windows Chrome
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    # Ubuntu Firefox
-    (
-        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) "
-        "Gecko/20100101 Firefox/124.0"
-    ),
-    # macOS Safari
-    (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3) "
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15"
-    ),
-    # iPhone Safari
-    (
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) "
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1"
-    ),
-    # iPad Safari
-    (
-        "Mozilla/5.0 (iPad; CPU OS 16_4 like Mac OS X) "
-        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1"
-    ),
-    # Android Chrome
-    (
-        "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-    ),
-    # Windows Edge
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 "
-        "Edg/124.0.2478.67"
-    ),
-    # Linux Chrome
-    (
-        "Mozilla/5.0 (X11; Linux x86_64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    # Windows Firefox
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) "
-        "Gecko/20100101 Firefox/124.0"
-    ),
+# =========================
+# Configuration + helpers
+# =========================
+
+UA_LIST: List[str] = [
+    # Shuffle through a few realistic desktop UAs
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 ]
 
-DEFAULT_HEADERS = {"User-Agent": random.choice(USER_AGENTS)}
-TIMEOUT_SECS = 20.0
-MAX_RESULTS_CAP = 1000
-BACKOFFS = [10, 30, 60]  # used for search fallback retries
-JITTER_RANGE = (0.5, 1.0)
-PER_HOST_DELAY = 1.0
-RETRY_STATUS = {429, 500, 502, 503, 504}
+ALLOWED_PATTERNS: List[Tuple[str, str]] = [
+    # host must end with this, AND path must contain this segment
+    ("appfolio.com", "/listings"),
+    ("managebuilding.com", "/Resident/public/rentals"),
+]
 
-# Default to *disabling* Google scraping fallback (prevents 429s).
-# Set DISABLE_GOOGLE=0 to enable googlesearch fallback.
-DISABLE_GOOGLE = os.getenv("DISABLE_GOOGLE", "1") == "1"
+BLOCKED_HOSTS = {
+    # Common ad/redirector hosts that appear in search results
+    "bing.com",
+    "www.bing.com",
+    "google.com",
+    "www.google.com",
+    "www.googleadservices.com",
+}
+BLOCKED_PATH_BITS = {"aclick", "aclk", "pagead"}
 
-# ----------------------------------------------------------------------------
 
-
-@dataclass(frozen=True)
+@dataclass
 class SearchConfig:
-    """Config for paginated crawling + throttling."""
-    target_count: int = 10
-    results_per_page: int = 5
-    sleep_sec: float = 5.0
+    per_page: int = 5
+    base_sleep: float = 5.0
+    google_enabled: bool = False  # default off unless DISABLE_GOOGLE=0
+    max_results_cap: int = 1000
+    serpapi_key: Optional[str] = None
 
 
 def _sleep_with_jitter(base: float) -> None:
-    time.sleep(base + random.uniform(*JITTER_RANGE))
+    time.sleep(base + random.uniform(0.15, 0.9))
 
 
-# --- Search helpers ----------------------------------------------------------
+def _headers() -> dict:
+    return {"User-Agent": random.choice(UA_LIST)}
 
-def _serpapi_search(query: str, num_results: int) -> List[str]:
-    """Optional SerpAPI Google search if SERPAPI_KEY set; else []."""
-    if not SERPAPI_KEY or GoogleSearch is None:
-        return []
+
+def get_session(use_cache: bool = True) -> requests.Session:
+    """
+    Return a configured requests (or requests-cache) Session.
+    """
+    if use_cache and requests_cache is not None:
+        # 24h expiration to avoid re-downloading the same pages
+        return requests_cache.CachedSession(
+            "scraper_cache.sqlite",
+            backend="sqlite",
+            expire_after=60 * 60 * 24,
+        )
+    return requests.Session()
+
+
+# =========================
+# URL allow/deny + resolve
+# =========================
+
+def is_allowed_url(url: str) -> bool:
+    """
+    Enforce a simple allowlist (host+path) and blocklist for obvious ad redirects.
+    """
     try:
-        params = {
-            "engine": "google",
-            "q": query,
-            "num": min(num_results, 100),
-            "api_key": SERPAPI_KEY,
-        }
-        results = GoogleSearch(params).get_dict()
-        organic = results.get("organic_results", []) or []
-        return [item.get("link") for item in organic if item.get("link")]
-    except (SerpApiError, requests.RequestException, ValueError) as e:
-        print(f"SerpAPI error: {e}", file=sys.stderr)
+        u = urlparse(url)
+    except Exception:
+        return False
+
+    host = (u.netloc or "").lower()
+    path = u.path or ""
+
+    if host in BLOCKED_HOSTS:
+        return False
+    if any(bit in path for bit in BLOCKED_PATH_BITS):
+        return False
+
+    return any(host.endswith(allowed_host) and needle in path
+               for allowed_host, needle in ALLOWED_PATTERNS)
+
+
+def normalize_and_check(url: str, session: requests.Session, timeout: int = 20) -> Optional[str]:
+    """
+    Follow redirects, then re-apply allowlist on the FINAL landing URL.
+    Return the final allowed URL or None if it should be skipped.
+    """
+    if not is_allowed_url(url):
+        return None
+
+    try:
+        # GET is safer than HEAD for these sites
+        resp = session.get(url, headers=_headers(), timeout=timeout, allow_redirects=True)
+        final_url = resp.url
+    except requests.RequestException:
+        return None
+
+    return final_url if is_allowed_url(final_url) else None
+
+
+# =========================
+# Page fetching + scoring
+# =========================
+
+def fetch_visible_text(url: str, session: requests.Session, timeout: int = 25) -> str:
+    """
+    Fetch a page and return the *visible* textual content.
+    """
+    resp = session.get(url, headers=_headers(), timeout=timeout)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.extract()
+    text = soup.get_text(separator="\n")
+    # Normalize whitespace
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r"\n{2,}", "\n", text).strip()
+    return text
+
+
+def count_pattern_on_page(url: str, pattern: re.Pattern[str], session: requests.Session) -> int:
+    """
+    Count regex pattern occurrences in visible text of the given URL.
+    """
+    try:
+        text = fetch_visible_text(url, session=session)
+    except requests.RequestException:
+        return 0
+    return len(pattern.findall(text))
+
+
+# =========================
+# Search backends
+# =========================
+
+def ddg_query(query: str, max_results: int) -> List[str]:
+    """
+    Search via DuckDuckGo; returns a list of URLs.
+    """
+    if DDGS is None:
+        return []
+    out: List[str] = []
+    with DDGS() as ddg:
+        for r in ddg.text(query, max_results=max_results):
+            url = r.get("href") or r.get("url")
+            if url:
+                out.append(url)
+    return out
+
+
+def google_query(query: str, max_results: int) -> List[str]:
+    """
+    Search via googlesearch-python; returns a list of URLs.
+    """
+    if google_search is None:
+        return []
+    # googlesearch-python returns a generator of URLs
+    try:
+        return list(google_search(query, num_results=max_results))
+    except Exception:
         return []
 
 
-def _ddg_search(query: str, num_results: int) -> List[str]:
+def serpapi_query(query: str, max_results: int, api_key: Optional[str]) -> List[str]:
     """
-    Robust DuckDuckGo search that works across ddgs/duckduckgo_search variants.
-    Retries a few times with exponential backoff. Returns [] on failure.
+    Search via SerpAPI (paid); returns a list of result URLs.
     """
-    if DDGSEARCH is None:
+    if GoogleSearch is None or not api_key:
+        return []
+    params = {
+        "engine": "google",
+        "q": query,
+        "num": min(100, max_results),
+        "api_key": api_key,
+    }
+    try:
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        items = results.get("organic_results", []) or []
+        urls = [item.get("link") for item in items if item.get("link")]
+        return urls[:max_results]
+    except Exception:
         return []
 
-    tries = 3
-    backoff = 2.0
 
-    for attempt in range(1, tries + 1):
-        ddg_obj = None
-        try:
-            ddg_obj = DDGSEARCH()
-            hits_iter = ddg_obj.text(query, max_results=num_results)
-            hits = list(hits_iter) if hits_iter is not None else []
-            urls = [h.get("href") for h in hits if isinstance(h, dict) and h.get("href")]
-            if urls:
-                try:
-                    if ddg_obj is not None and hasattr(ddg_obj, "close"):
-                        ddg_obj.close()  # type: ignore[attr-defined]
-                except (OSError, TypeError, AttributeError):
-                    pass
-                return urls
-        except (RuntimeError, ValueError) as err:
-            print(
-                f"DDG search error (attempt {attempt}/{tries}): {err}",
-                file=sys.stderr,
-            )
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            print(
-                f"DDG unexpected error (attempt {attempt}/{tries}): {err}",
-                file=sys.stderr,
-            )
-        finally:
-            try:
-                if ddg_obj is not None and hasattr(ddg_obj, "close"):
-                    ddg_obj.close()  # type: ignore[attr-defined]
-            except (OSError, TypeError, AttributeError):
-                pass
-
-        _sleep_with_jitter(backoff)
-        backoff *= 2
-
-    return []
-
-
-def _google_search(query: str, num_results: int) -> List[str]:
-    """Return up to num_results Google results for the query (googlesearch-python)."""
-    if GOOGLESEARCH is None:
-        return []
-    return list(GOOGLESEARCH(query, num_results=num_results))
-
-
-def get_candidates(query: str, num_results: int) -> List[str]:
-    """
-    Prefer resilient/clean backends to minimize 429s:
-      1) SerpAPI (if configured)
-      2) DuckDuckGo (ddgs)
-      3) Google (googlesearch-python) ONLY if DISABLE_GOOGLE=0
-    """
-    # 0) SerpAPI (paid, reliable)
-    sa = _serpapi_search(query, num_results)
-    if sa:
-        return sa
-
-    # 1) DDG primary
-    ddg = _ddg_search(query, num_results)
-    if ddg:
-        return ddg
-
-    # 2) Optional Google fallback (disabled by default)
-    if not DISABLE_GOOGLE:
-        for attempt, backoff in enumerate(BACKOFFS + [None], start=1):
-            try:
-                g = _google_search(query, num_results)
-                if g:
-                    return g
-            except Exception as err:  # pylint: disable=broad-exception-caught
-                msg = str(err)
-                is_429 = ("429" in msg) or ("Too Many Requests" in msg) or ("sorry/index" in msg)
-                if is_429 and backoff is not None:
-                    print(
-                        f"Google 429 — backing off {backoff}s (attempt {attempt}/{len(BACKOFFS)})",
-                        file=sys.stderr,
-                    )
-                    _sleep_with_jitter(backoff)
-                    continue
-                print(f"Google search failed ({err}).", file=sys.stderr)
-
-            if backoff is not None:
-                _sleep_with_jitter(backoff)
-                continue
-
-    # Nothing worked
-    raise RuntimeError("No search backend returned results.")
-
-
-# --- Fetching & parsing ------------------------------------------------------
-
-def visible_text(html: str) -> str:
-    """Return visible text by stripping scripts, styles, etc."""
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript", "template"]):
-        tag.decompose()
-    return soup.get_text(" ", strip=True)
-
-
-def count_pattern_on_page(
-    url: str,
-    pattern: Pattern[str],
-    headers: Optional[dict[str, str]] = None,
-    timeout: float = TIMEOUT_SECS,
-    only_visible: bool = True,
-) -> int:
-    """
-    Fetch a page and count occurrences of a compiled regex pattern.
-    Returns 0 on any fetch/parse error. Retries on transient errors.
-    """
-    tries = 3
-    backoff = 3.0
-    for attempt in range(1, tries + 1):
-        try:
-            hdrs = dict(headers or {})
-            hdrs.setdefault("User-Agent", random.choice(USER_AGENTS))
-            hdrs.setdefault(
-                "Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            )
-            hdrs.setdefault("Accept-Language", "en-US,en;q=0.9")
-            hdrs.setdefault("Connection", "close")
-
-            time.sleep(PER_HOST_DELAY)
-            resp = requests.get(url, headers=hdrs, timeout=timeout)
-            status = getattr(resp, "status_code", 0)
-            if status in RETRY_STATUS:
-                if attempt < tries:
-                    _sleep_with_jitter(backoff)
-                    backoff *= 2
-                    continue
-                return 0
-
-            resp.raise_for_status()
-            content = visible_text(resp.text) if only_visible else resp.text
-            return len(pattern.findall(content))
-        except (
-            exceptions.Timeout,
-            exceptions.ConnectionError,
-            exceptions.ChunkedEncodingError,
-        ):
-            if attempt < tries:
-                _sleep_with_jitter(backoff)
-                backoff *= 2
-                continue
-            return 0
-        except (exceptions.HTTPError, exceptions.RequestException, UnicodeDecodeError):
-            return 0
-
-
-# --- Orchestration -----------------------------------------------------------
-
-def search_and_filter(
+def search_candidates(
     query: str,
-    pattern: Pattern[str],
-    min_occurrences: int,
-    config: SearchConfig = SearchConfig(),
+    cfg: SearchConfig,
 ) -> List[str]:
     """
-    Run a search with `query`, visit candidates, and keep URLs whose page
-    matches `pattern` at least `min_occurrences` times. Stops at
-    `config.target_count`.
+    Try multiple backends in order: SerpAPI -> DDG -> Google (if enabled).
     """
-    seen: Set[str] = set()
-    qualifying: List[str] = []
+    max_results = cfg.per_page
+    urls: List[str] = []
 
-    num_results = config.results_per_page
-    while len(qualifying) < config.target_count and num_results <= MAX_RESULTS_CAP:
-        try:
-            candidates = get_candidates(query, num_results=num_results)
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            print(f"Search failed: {err}", file=sys.stderr)
-            break
+    # 1) SerpAPI (if configured)
+    if cfg.serpapi_key:
+        urls = serpapi_query(query, max_results=max_results, api_key=cfg.serpapi_key)
+
+    # 2) DuckDuckGo
+    if not urls:
+        urls = ddg_query(query, max_results=max_results)
+
+    # 3) Google scraping fallback (fragile; opt-in only)
+    if not urls and cfg.google_enabled:
+        urls = google_query(query, max_results=max_results)
+
+    return urls
+
+
+# =========================
+# Orchestrators per PMS
+# =========================
+
+def managebuilding_queries_for_state(state: str) -> List[str]:
+    """
+    Build a few query variants to surface Buildium (managebuilding) listings.
+    """
+    return [
+        f'site:managebuilding.com "Resident/public/rentals" "{state}"',
+        f'site:managebuilding.com Resident/public/rentals {state}',
+        f'"Resident/public/rentals" {state} managebuilding',
+    ]
+
+
+def appfolio_queries_for_state(state: str) -> List[str]:
+    """
+    Build a few query variants to surface AppFolio listings.
+    """
+    return [
+        f"site:appfolio.com/listings {state}",
+        f'"appfolio.com/listings" "{state}"',
+        f'site:appfolio.com inurl:listings "{state}"',
+    ]
+
+
+def search_and_filter(
+    queries: Iterable[str],
+    target: int,
+    min_count: int,
+    pattern: re.Pattern[str],
+    cfg: SearchConfig,
+    session: requests.Session,
+    verbose_prefix: str,
+) -> List[str]:
+    """
+    Run queries in order, de-duplicate results, resolve redirects, enforce allowlist,
+    then qualify pages by counting a regex pattern in visible text.
+    """
+    found: List[str] = []
+    seen: set[str] = set()
+
+    for q in queries:
+        # Fetch a small page of search results
+        candidates = search_candidates(q, cfg)
+        if not candidates:
+            _sleep_with_jitter(cfg.base_sleep)
+            continue
 
         for url in candidates:
-            if len(qualifying) >= config.target_count:
-                break
             if url in seen:
                 continue
             seen.add(url)
 
-            occurrences = count_pattern_on_page(url, pattern)
-            if occurrences >= min_occurrences:
-                qualifying.append(url)
-                print(
-                    "[+] Found good site "
-                    f"({len(qualifying)}/{config.target_count}): {url}"
-                )
+            final_url = normalize_and_check(url, session=session)
+            if not final_url:
+                # Skip ad/redirector or non-allowed
+                continue
 
-            _sleep_with_jitter(config.sleep_sec)
+            # Qualify by pattern count
+            n = count_pattern_on_page(final_url, pattern=pattern, session=session)
+            if n >= min_count:
+                found.append(final_url)
+                print(f"[+] Found good site ({len(found)}/{target}): {final_url}")
+                if len(found) >= target:
+                    return found
 
-        num_results += config.results_per_page
-        _sleep_with_jitter(config.sleep_sec)
+            _sleep_with_jitter(cfg.base_sleep)
 
-    return qualifying[:config.target_count]
+        # brief pause between query variants
+        _sleep_with_jitter(cfg.base_sleep)
+
+    return found
 
 
-def run_search(
-    query: str,
-    pattern: Pattern[str],
-    min_occurrences: int,
-    config: SearchConfig = SearchConfig(),
+def managebuilding_urls(
+    state: str,
+    target: int = 10,
+    min_price_markers: int = 21,
+    cfg: Optional[SearchConfig] = None,
+    session: Optional[requests.Session] = None,
 ) -> List[str]:
-    """Thin wrapper so callers don’t duplicate the call signature."""
+    """
+    Find Buildium (managebuilding.com) listings by counting visible price markers like $1234.
+    """
+    cfg = cfg or SearchConfig(
+        per_page=5,
+        base_sleep=5.0,
+        google_enabled=(os.getenv("DISABLE_GOOGLE", "1").strip() == "0"),
+        serpapi_key=os.getenv("SERPAPI_KEY") or None,
+    )
+    session = session or get_session(use_cache=True)
+
+    price_re = re.compile(r"\$\s*\d{3,5}")  # simple $1234 style markers
+    queries = managebuilding_queries_for_state(state)
     return search_and_filter(
-        query=query,
-        pattern=pattern,
-        min_occurrences=min_occurrences,
-        config=config,
+        queries=queries,
+        target=target,
+        min_count=min_price_markers,
+        pattern=price_re,
+        cfg=cfg,
+        session=session,
+        verbose_prefix="Buildium",
     )
 
 
-def print_results(title: str, urls: List[str]) -> None:
-    """Consistent, shared printing."""
-    print(f"\nFound {len(urls)} qualifying websites for {title}:\n")
-    for url in urls:
-        print(url)
+def appfolio_urls(
+    state: str,
+    target: int = 10,
+    min_apply_now: int = 20,
+    cfg: Optional[SearchConfig] = None,
+    session: Optional[requests.Session] = None,
+) -> List[str]:
+    """
+    Find AppFolio (appfolio.com/listings) pages by counting occurrences of 'apply now'.
+    """
+    cfg = cfg or SearchConfig(
+        per_page=5,
+        base_sleep=5.0,
+        google_enabled=(os.getenv("DISABLE_GOOGLE", "1").strip() == "0"),
+        serpapi_key=os.getenv("SERPAPI_KEY") or None,
+    )
+    session = session or get_session(use_cache=True)
+
+    apply_re = re.compile(r"\bapply\s+now\b", re.IGNORECASE)
+    queries = appfolio_queries_for_state(state)
+    return search_and_filter(
+        queries=queries,
+        target=target,
+        min_count=min_apply_now,
+        pattern=apply_re,
+        cfg=cfg,
+        session=session,
+        verbose_prefix="AppFolio",
+    )

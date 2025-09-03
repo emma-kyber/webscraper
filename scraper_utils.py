@@ -1,12 +1,12 @@
-# scraper_utils.py
+"""Utility helpers for searching and scraping rental listing pages."""
 from __future__ import annotations
 
 import os
+import random
 import re
 import time
-import random
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable
 from urllib.parse import urlparse
 
 import requests
@@ -14,35 +14,35 @@ from bs4 import BeautifulSoup
 
 # Optional caching (SQLite in project root)
 try:
-    import requests_cache  # type: ignore
-except Exception:  # pragma: no cover
-    requests_cache = None  # graceful fallback
+    import requests_cache as REQUESTS_CACHE  # type: ignore
+except ImportError:  # pragma: no cover
+    REQUESTS_CACHE = None  # graceful fallback
 
 # --- Optional search backends ---
 # 1) DuckDuckGo (preferred)
 try:
     from ddgs import DDGS  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     DDGS = None  # noqa: N816
 
 # 2) Google scraping fallback (fragile; can be disabled)
 try:
-    from googlesearch import search as google_search  # type: ignore
-except Exception:  # pragma: no cover
-    google_search = None
+    from googlesearch import search as GOOGLE_SEARCH  # type: ignore
+except ImportError:  # pragma: no cover
+    GOOGLE_SEARCH = None
 
 # 3) SerpAPI (paid, if SERPAPI_KEY provided)
 try:
-    from serpapi import GoogleSearch  # type: ignore
-except Exception:  # pragma: no cover
-    GoogleSearch = None
+    from serpapi import GoogleSearch as SerpApiSearch  # type: ignore
+except ImportError:  # pragma: no cover
+    SerpApiSearch = None
 
 
 # =========================
 # Configuration + helpers
 # =========================
 
-UA_LIST: List[str] = [
+UA_LIST: list[str] = [
     # Shuffle through a few realistic desktop UAs
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -52,7 +52,7 @@ UA_LIST: List[str] = [
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 ]
 
-ALLOWED_PATTERNS: List[Tuple[str, str]] = [
+ALLOWED_PATTERNS: list[tuple[str, str]] = [
     # host must end with this, AND path must contain this segment
     ("appfolio.com", "/listings"),
     ("managebuilding.com", "/Resident/public/rentals"),
@@ -71,11 +71,13 @@ BLOCKED_PATH_BITS = {"aclick", "aclk", "pagead"}
 
 @dataclass
 class SearchConfig:
+    """Runtime configuration for the search helpers."""
+
     per_page: int = 5
     base_sleep: float = 5.0
     google_enabled: bool = False  # default off unless DISABLE_GOOGLE=0
     max_results_cap: int = 1000
-    serpapi_key: Optional[str] = None
+    serpapi_key: str | None = None
 
 
 def _sleep_with_jitter(base: float) -> None:
@@ -90,9 +92,9 @@ def get_session(use_cache: bool = True) -> requests.Session:
     """
     Return a configured requests (or requests-cache) Session.
     """
-    if use_cache and requests_cache is not None:
+    if use_cache and REQUESTS_CACHE is not None:
         # 24h expiration to avoid re-downloading the same pages
-        return requests_cache.CachedSession(
+        return REQUESTS_CACHE.CachedSession(
             "scraper_cache.sqlite",
             backend="sqlite",
             expire_after=60 * 60 * 24,
@@ -110,7 +112,7 @@ def is_allowed_url(url: str) -> bool:
     """
     try:
         u = urlparse(url)
-    except Exception:
+    except ValueError:
         return False
 
     host = (u.netloc or "").lower()
@@ -125,7 +127,7 @@ def is_allowed_url(url: str) -> bool:
                for allowed_host, needle in ALLOWED_PATTERNS)
 
 
-def normalize_and_check(url: str, session: requests.Session, timeout: int = 20) -> Optional[str]:
+def normalize_and_check(url: str, session: requests.Session, timeout: int = 20) -> str | None:
     """
     Follow redirects, then re-apply allowlist on the FINAL landing URL.
     Return the final allowed URL or None if it should be skipped.
@@ -179,13 +181,13 @@ def count_pattern_on_page(url: str, pattern: re.Pattern[str], session: requests.
 # Search backends
 # =========================
 
-def ddg_query(query: str, max_results: int) -> List[str]:
+def ddg_query(query: str, max_results: int) -> list[str]:
     """
     Search via DuckDuckGo; returns a list of URLs.
     """
     if DDGS is None:
         return []
-    out: List[str] = []
+    out: list[str] = []
     with DDGS() as ddg:
         for r in ddg.text(query, max_results=max_results):
             url = r.get("href") or r.get("url")
@@ -194,24 +196,24 @@ def ddg_query(query: str, max_results: int) -> List[str]:
     return out
 
 
-def google_query(query: str, max_results: int) -> List[str]:
+def google_query(query: str, max_results: int) -> list[str]:
     """
     Search via googlesearch-python; returns a list of URLs.
     """
-    if google_search is None:
+    if GOOGLE_SEARCH is None:
         return []
     # googlesearch-python returns a generator of URLs
     try:
-        return list(google_search(query, num_results=max_results))
-    except Exception:
+        return list(GOOGLE_SEARCH(query, num_results=max_results))
+    except (requests.RequestException, RuntimeError):
         return []
 
 
-def serpapi_query(query: str, max_results: int, api_key: Optional[str]) -> List[str]:
+def serpapi_query(query: str, max_results: int, api_key: str | None) -> list[str]:
     """
     Search via SerpAPI (paid); returns a list of result URLs.
     """
-    if GoogleSearch is None or not api_key:
+    if SerpApiSearch is None or not api_key:
         return []
     params = {
         "engine": "google",
@@ -220,24 +222,24 @@ def serpapi_query(query: str, max_results: int, api_key: Optional[str]) -> List[
         "api_key": api_key,
     }
     try:
-        search = GoogleSearch(params)
+        search = SerpApiSearch(params)
         results = search.get_dict()
         items = results.get("organic_results", []) or []
         urls = [item.get("link") for item in items if item.get("link")]
         return urls[:max_results]
-    except Exception:
+    except (requests.RequestException, RuntimeError):
         return []
 
 
 def search_candidates(
     query: str,
     cfg: SearchConfig,
-) -> List[str]:
+) -> list[str]:
     """
     Try multiple backends in order: SerpAPI -> DDG -> Google (if enabled).
     """
     max_results = cfg.per_page
-    urls: List[str] = []
+    urls: list[str] = []
 
     # 1) SerpAPI (if configured)
     if cfg.serpapi_key:
@@ -258,7 +260,7 @@ def search_candidates(
 # Orchestrators per PMS
 # =========================
 
-def managebuilding_queries_for_state(state: str) -> List[str]:
+def managebuilding_queries_for_state(state: str) -> list[str]:
     """
     Build a few query variants to surface Buildium (managebuilding) listings.
     """
@@ -269,7 +271,7 @@ def managebuilding_queries_for_state(state: str) -> List[str]:
     ]
 
 
-def appfolio_queries_for_state(state: str) -> List[str]:
+def appfolio_queries_for_state(state: str) -> list[str]:
     """
     Build a few query variants to surface AppFolio listings.
     """
@@ -280,7 +282,7 @@ def appfolio_queries_for_state(state: str) -> List[str]:
     ]
 
 
-def search_and_filter(
+def search_and_filter(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     queries: Iterable[str],
     target: int,
     min_count: int,
@@ -288,12 +290,12 @@ def search_and_filter(
     cfg: SearchConfig,
     session: requests.Session,
     verbose_prefix: str,
-) -> List[str]:
+) -> list[str]:
     """
     Run queries in order, de-duplicate results, resolve redirects, enforce allowlist,
     then qualify pages by counting a regex pattern in visible text.
     """
-    found: List[str] = []
+    found: list[str] = []
     seen: set[str] = set()
 
     for q in queries:
@@ -317,7 +319,10 @@ def search_and_filter(
             n = count_pattern_on_page(final_url, pattern=pattern, session=session)
             if n >= min_count:
                 found.append(final_url)
-                print(f"[+] Found good site ({len(found)}/{target}): {final_url}")
+                print(
+                    f"[+] {verbose_prefix} found site "
+                    f"({len(found)}/{target}): {final_url}"
+                )
                 if len(found) >= target:
                     return found
 
@@ -333,9 +338,9 @@ def managebuilding_urls(
     state: str,
     target: int = 10,
     min_price_markers: int = 21,
-    cfg: Optional[SearchConfig] = None,
-    session: Optional[requests.Session] = None,
-) -> List[str]:
+    cfg: SearchConfig | None = None,
+    session: requests.Session | None = None,
+) -> list[str]:
     """
     Find Buildium (managebuilding.com) listings by counting visible price markers like $1234.
     """
@@ -364,9 +369,9 @@ def appfolio_urls(
     state: str,
     target: int = 10,
     min_apply_now: int = 20,
-    cfg: Optional[SearchConfig] = None,
-    session: Optional[requests.Session] = None,
-) -> List[str]:
+    cfg: SearchConfig | None = None,
+    session: requests.Session | None = None,
+) -> list[str]:
     """
     Find AppFolio (appfolio.com/listings) pages by counting occurrences of 'apply now'.
     """

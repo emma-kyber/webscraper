@@ -1,4 +1,4 @@
-# script.py
+"""Command-line interface for locating Buildium and AppFolio listings."""
 from __future__ import annotations
 
 import argparse
@@ -17,25 +17,58 @@ This tool searches the web for listing pages and qualifies them by content.
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
     p = argparse.ArgumentParser(description="Find listing portals by state")
     p.add_argument(
         "--state",
         type=str,
-        help='State name or abbreviation (e.g., "Arizona" or "AZ"). If omitted, you will be prompted.',
+        help=(
+            'State name or abbreviation (e.g., "Arizona" or "AZ"). '
+            "If omitted, you will be prompted."
+        ),
     )
-    p.add_argument("--target", type=int, default=10, help="How many qualifying sites to collect.")
-    p.add_argument("--mb-min", type=int, default=21, help="Min price markers for Buildium.")
-    p.add_argument("--af-min", type=int, default=20, help='Min "apply now" matches for AppFolio.')
-    p.add_argument("--per-page", type=int, default=5, help="Search results per backend call.")
-    p.add_argument("--sleep", type=float, default=5.0, help="Base delay (seconds) between requests.")
+    p.add_argument(
+        "--target",
+        type=int,
+        default=10,
+        help="How many qualifying sites to collect.",
+    )
+    p.add_argument(
+        "--mb-min",
+        type=int,
+        default=21,
+        help="Min price markers for Buildium.",
+    )
+    p.add_argument(
+        "--af-min",
+        type=int,
+        default=20,
+        help='Min "apply now" matches for AppFolio.',
+    )
+    p.add_argument(
+        "--per-page",
+        type=int,
+        default=5,
+        help="Search results per backend call.",
+    )
+    p.add_argument(
+        "--sleep",
+        type=float,
+        default=5.0,
+        help="Base delay (seconds) between requests.",
+    )
     return p.parse_args()
 
 
 def main() -> int:
+    """Run the CLI application."""
+
     print(BANNER)
 
     args = parse_args()
-    state = args.state or input("Enter a state name or abbreviation (e.g., 'Texas' or 'TX'): ").strip()
+    prompt = "Enter a state name or abbreviation (e.g., 'Texas' or 'TX'): "
+    state = args.state or input(prompt).strip()
     if not state:
         print("No state provided. Exiting.")
         return 1

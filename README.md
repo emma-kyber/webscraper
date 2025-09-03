@@ -66,7 +66,11 @@ The project is more than a simple scraper. Key implementation details:
    ```bash
    export DISABLE_GOOGLE=1
    ```
-2. Run the scraper and enter a state name or abbreviation when prompted:
+2. Run the scraper. To avoid the interactive prompt, provide a state name or abbreviation:
+   ```bash
+   python3 script.py --state Texas
+   ```
+   You can also run without `--state` and enter it when prompted:
    ```bash
    python3 script.py
    ```
@@ -102,6 +106,7 @@ https://example2.appfolio.com/listings
 
 You can tweak these parameters when running `script.py`:
 
+- `--state` – state name or abbreviation to skip the interactive prompt.
 - `--target` – number of qualifying sites to collect (default: 10).
 - `--mb-min` – minimum `$1234` markers for Buildium pages (default: 21).
 - `--af-min` – minimum "apply now" phrases for AppFolio pages (default: 20).
@@ -141,6 +146,6 @@ You can tweak these parameters when running `script.py`:
 
 ```bash
 export DISABLE_GOOGLE=1
-python3 script.py
+python3 script.py --state Texas
 ```
 
